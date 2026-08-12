@@ -9,21 +9,64 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: cgn_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v4
+      
       - name: Use Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+
       - name: Install dependencies (server)
         working-directory: server
         run: npm ci
+
+      - name: Run database migrations
+        working-directory: server
+        env:
+          DATABASE_URL: postgresql://postgres:password@localhost:5432/cgn_test
+          NODE_ENV: test
+          JWT_ACCESS_SECRET: BKyr/5xV4gF7jwySUZ2yN8gy5dasx93p2IDONtUzA011+SW8G5iVZkq3oyGK56OZ
+          JWT_REFRESH_SECRET: oPaLc9ybj/FJh+ygle2HBForRla7apitmGNBBIomiom7CR7lDRsq1uJ5xo6hzfML
+          SMTP_HOST: smtp.gmail.com
+          SMTP_PORT: 587
+          SMTP_USER: civicgreennet@gmail.com
+          SMTP_PASS: dummy_smtp_pass
+        run: npm run migrate
+
       - name: Run server tests
         working-directory: server
+        env:
+          DATABASE_URL: postgresql://postgres:password@localhost:5432/cgn_test
+          NODE_ENV: test
+          JWT_ACCESS_SECRET: BKyr/5xV4gF7jwySUZ2yN8gy5dasx93p2IDONtUzA011+SW8G5iVZkq3oyGK56OZ
+          JWT_REFRESH_SECRET: oPaLc9ybj/FJh+ygle2HBForRla7apitmGNBBIomiom7CR7lDRsq1uJ5xo6hzfML
+          SMTP_HOST: smtp.gmail.com
+          SMTP_PORT: 587
+          SMTP_USER: civicgreennet@gmail.com
+          SMTP_PASS: dummy_smtp_pass
         run: npm test
+
       - name: Install dependencies (client)
         working-directory: client
         run: npm ci
+
       - name: Build client
         working-directory: client
         run: npm run build
