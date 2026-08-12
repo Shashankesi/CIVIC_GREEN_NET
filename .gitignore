@@ -1,0 +1,60 @@
+# Environment files
+.env
+.env.*
+.env.example
+.env.example.*
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Build output
+dist/
+build/
+coverage/
+client/dist/
+server/coverage/
+
+# Logs
+*.log
+logs/
+server/server_stdout.log
+server/server_stderr.log
+server/test_out.txt
+server/test_results_latest.txt
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+
+# Runtime
+*.pid
+*.seed
+
+# Temporary
+tmp/
+temp/
+server/tmp/
+*.tmp
+
+# Secrets / credentials
+*.pem
+*.key
+*.crt
+credentials.json
+service-account*.json
+
+# Local development uploads
+server/uploads/
+uploads/
+
+# AI Agent Workspace
+brain/

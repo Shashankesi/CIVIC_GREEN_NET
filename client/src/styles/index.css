@@ -1,0 +1,425 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: 248 250 252;
+  --surface: 255 255 255;
+  --surface-muted: 241 245 249;
+  --muted: 100 116 139;
+  --primary: 16 185 129;
+  --primary-strong: 5 150 105;
+  --border: 226 232 240;
+  --glass: 255 255 255 / 0.7;
+  --ai: 124 58 237;
+}
+
+.dark {
+  --bg: 7 17 31;
+  --surface: 17 24 39;
+  --surface-muted: 15 23 42;
+  --muted: 148 163 184;
+  --primary: 52 211 153;
+  --primary-strong: 16 185 129;
+  --border: 30 41 59;
+  --glass: 17 24 39 / 0.6;
+  --ai: 167 139 250;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+  background-color: rgb(var(--bg));
+  color: #0f172a;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+.dark body {
+  color: #e2e8f0;
+}
+
+/* ===== Scrollbar ===== */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.3);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.5);
+  background-clip: content-box;
+}
+
+/* ===== Glass ===== */
+.glass {
+  background: rgba(var(--glass));
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  border: 1px solid rgba(var(--border));
+}
+
+/* ===== Gradient blobs ===== */
+.gradient-blob {
+  filter: blur(60px);
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* ===== Card ===== */
+.card {
+  background: rgb(var(--surface));
+  border: 1px solid rgb(var(--border));
+  border-radius: 0.9rem;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.06), 0 1px 2px -1px rgba(0, 0, 0, 0.06);
+  transition: box-shadow 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+.card-hover:hover {
+  box-shadow: 0 8px 30px -6px rgba(0, 0, 0, 0.12), 0 2px 6px -2px rgba(0, 0, 0, 0.06);
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+/* ===== Focus states ===== */
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.35);
+}
+
+/* ===== Screen reader only ===== */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+.sr-only:focus:not(:focus-visible) {
+  position: static;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip: auto;
+  white-space: normal;
+}
+
+/* ===== Page transitions ===== */
+.page-enter { opacity: 0; transform: translateY(10px); }
+.page-enter-active { opacity: 1; transform: translateY(0); transition: all 300ms ease; }
+.page-exit { opacity: 1; }
+.page-exit-active { opacity: 0; transform: translateY(-10px); transition: all 220ms ease; }
+
+/* ===== Skeleton shimmer ===== */
+.skeleton {
+  background: linear-gradient(90deg, rgba(226,232,240,0.4) 25%, rgba(226,232,240,0.7) 37%, rgba(226,232,240,0.4) 63%);
+  background-size: 1000px 100%;
+  animation: shimmer 2s linear infinite;
+}
+.dark .skeleton {
+  background: linear-gradient(90deg, rgba(30,41,59,0.4) 25%, rgba(30,41,59,0.7) 37%, rgba(30,41,59,0.4) 63%);
+  background-size: 1000px 100%;
+  animation: shimmer 2s linear infinite;
+}
+@keyframes shimmer {
+  0% { background-position: -1000px 0; }
+  100% { background-position: 1000px 0; }
+}
+
+/* ===== Map container ===== */
+.leaflet-container {
+  font-family: 'Inter', sans-serif;
+  border-radius: 1.25rem;
+  background: #e8f4f8;
+  min-height: 320px;
+  /* Never set opacity < 1 on the map container itself */
+  opacity: 1 !important;
+}
+.dark .leaflet-container {
+  background: #0d1b2e;
+}
+
+/* --- Leaflet pane stack: do NOT set to z-index 0 --- */
+/* Leaflet manages its own z-index hierarchy internally; */
+/* overriding to 0 breaks tile/marker/popup ordering. */
+.leaflet-tile-pane    { z-index: 200; }
+.leaflet-overlay-pane { z-index: 400; }
+.leaflet-shadow-pane  { z-index: 500; }
+.leaflet-marker-pane  { z-index: 600; }
+.leaflet-tooltip-pane { z-index: 650; }
+.leaflet-popup-pane   { z-index: 700; }
+.leaflet-control-container { z-index: 800; }
+
+/* Ensure tile images are fully opaque — no CSS filter washing them out */
+.leaflet-tile {
+  opacity: 1 !important;
+  filter: none !important;
+}
+
+.leaflet-control-attribution {
+  background: rgba(255, 255, 255, 0.88) !important;
+  border-radius: 0.6rem;
+}
+.dark .leaflet-control-attribution {
+  background: rgba(2, 6, 23, 0.85) !important;
+  color: #e2e8f0;
+}
+
+/* --- Civic GreenNet markers --- */
+.cgn-marker-icon {
+  background: transparent;
+  border: none;
+}
+.cgn-pin {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+}
+.cgn-pin-inner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  color: #fff;
+  font-weight: 700;
+  font-size: 12px;
+  line-height: 1;
+  border: 2px solid rgba(255,255,255,0.92);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.28);
+}
+.cgn-pin-icon {
+  transform: none;
+}
+.cgn-pin-ring {
+  position: absolute;
+  inset: -4px;
+  border-radius: 9999px;
+  opacity: 0.5;
+  pointer-events: none;
+}
+.cgn-pin-selected {
+  animation: cgn-pulse 1.6s ease-out infinite;
+}
+@keyframes cgn-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(16,185,129,0.45); }
+  70% { box-shadow: 0 0 0 12px rgba(16,185,129,0); }
+  100% { box-shadow: 0 0 0 0 rgba(16,185,129,0); }
+}
+
+/* Current-location dot */
+.cgn-loc-icon { background: transparent; border: none; }
+.cgn-loc-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #10b981;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 3px rgba(16,185,129,0.35);
+}
+
+/* --- MarkerCluster overrides --- */
+.marker-cluster-small,
+.marker-cluster-medium,
+.marker-cluster-large {
+  background-color: transparent;
+}
+.marker-cluster-small div,
+.marker-cluster-medium div,
+.marker-cluster-large div {
+  background-color: rgba(16,185,129,0.92);
+  border: 2px solid rgba(255,255,255,0.95);
+  color: #fff;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.25);
+}
+
+/* --- Popup theming --- */
+.cgn-popup {
+  min-width: 210px;
+  padding: 0;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+.cgn-pop-img {
+  width: 100%;
+  max-height: 120px;
+  object-fit: cover;
+  border-radius: 8px 8px 0 0;
+}
+.cgn-pop-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 4px;
+}
+.cgn-pop-id {
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+}
+.cgn-pop-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.cgn-pop-status {
+  font-size: 11px;
+  font-weight: 600;
+  color: #475569;
+}
+.cgn-pop-pri {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+.cgn-pop-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+  line-height: 1.3;
+}
+.dark .cgn-pop-title { color: #e2e8f0; }
+.cgn-pop-meta {
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cgn-pop-btn {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 8px;
+  margin-right: 6px;
+  padding: 5px 12px;
+  border-radius: 8px;
+  background: #10b981;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.cgn-pop-btn.ghost {
+  background: transparent;
+  border: 1px solid #cbd5e1;
+  color: #475569;
+}
+.dark .cgn-pop-btn.ghost {
+  border-color: #334155;
+  color: #cbd5e1;
+}
+
+/* Leaflet popup wrapper rounded + dark */
+.leaflet-popup-content-wrapper {
+  border-radius: 12px;
+  box-shadow: 0 8px 30px -6px rgba(0,0,0,0.2);
+}
+.dark .leaflet-popup-content-wrapper {
+  background: #0f172a;
+  color: #e2e8f0;
+}
+.dark .leaflet-popup-tip {
+  background: #0f172a;
+}
+
+/* --- Legend --- */
+.cgn-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  border: 1px solid rgba(255,255,255,0.6);
+}
+
+/* Attribution size on mobile */
+.leaflet-control-attribution {
+  font-size: 9px;
+}
+@media (max-width: 480px) {
+  .leaflet-control-attribution {
+    font-size: 8px;
+    max-width: 60%;
+    line-height: 1.2;
+  }
+}
+
+/* === Custom cluster icon === */
+.cgn-cluster-icon {
+  background: transparent;
+  border: none;
+}
+.cgn-cluster {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(16,185,129,0.92);
+  border: 2.5px solid rgba(255,255,255,0.95);
+  color: #fff;
+  font-weight: 800;
+  font-family: 'Inter', sans-serif;
+  box-shadow: 0 2px 12px rgba(16,185,129,0.4);
+  transition: transform 0.15s ease;
+}
+.cgn-cluster:hover { transform: scale(1.1); }
+
+/* === Map loading progress bar === */
+@keyframes cgn-progress {
+  0%   { margin-left: -60%; width: 60%; }
+  60%  { margin-left: 60%;  width: 40%; }
+  100% { margin-left: 120%; width: 30%; }
+}
+
+/* === Leaflet popup — no padding bleed === */
+.cgn-leaflet-popup .leaflet-popup-content {
+  margin: 8px;
+}
+.cgn-leaflet-popup .leaflet-popup-content-wrapper {
+  padding: 0;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+/* === Route Loader Custom Animations === */
+@keyframes cgn-leaf-pulse {
+  0%, 100% { transform: scale(1) translateY(0); filter: drop-shadow(0 0 4px rgba(16,185,129,0.3)); }
+  50% { transform: scale(1.1) translateY(-4px); filter: drop-shadow(0 0 12px rgba(16,185,129,0.6)); }
+}
+.cgn-leaf-pulse {
+  animation: cgn-leaf-pulse 2.2s ease-in-out infinite;
+}
+
+@keyframes cgn-infinite-progress {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+.cgn-progress-sweep {
+  animation: cgn-infinite-progress 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
