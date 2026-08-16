@@ -290,8 +290,20 @@ describe('CIVIC GREENNET — PHASE 8 PRODUCTION READINESS & SECURITY', () => {
     });
 
     test('Rate limit headers are present on API responses', async () => {
-      const res = await request(app).get('/api/health');
+      const res = await request(app).get('/api/public/stats');
       expect(res.headers['ratelimit-limit'] || res.headers['x-ratelimit-limit']).toBeDefined();
+    });
+
+    test('Health check endpoints (/api/health and /health) bypass rate limiter and return 200', async () => {
+      const res1 = await request(app).get('/api/health');
+      expect(res1.status).toBe(200);
+      expect(res1.body.success).toBe(true);
+      expect(res1.body.status).toBe('healthy');
+
+      const res2 = await request(app).get('/health');
+      expect(res2.status).toBe(200);
+      expect(res2.body.success).toBe(true);
+      expect(res2.body.status).toBe('healthy');
     });
   });
 

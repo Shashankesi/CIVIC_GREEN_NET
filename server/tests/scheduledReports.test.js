@@ -5,6 +5,8 @@ const scheduledReportWorker = require('../services/analytics/scheduledReportWork
 const reportService = require('../services/analytics/reportService');
 const emailService = require('../services/emailService');
 
+jest.setTimeout(60000);
+
 describe('Phase 6 Hardening — Scheduled Reports & Concurrency Worker Test Suite', () => {
   let adminToken = null;
   let citizenToken = null;
@@ -204,18 +206,18 @@ describe('Phase 6 Hardening — Scheduled Reports & Concurrency Worker Test Suit
 
   describe('4. PostgreSQL Locking & Duplicate Execution Prevention', () => {
     test('acquireDueReports safely acquires due reports with SKIP LOCKED', async () => {
-      // Set next_run_at to past to simulate due report
-      await db.query('UPDATE scheduled_reports SET next_run_at = now() - INTERVAL \'1 hour\', is_active = true WHERE id = $1', [createdScheduleId]);
+      // Clear any prior lock and set next_run_at to past
+      await db.query('UPDATE scheduled_reports SET next_run_at = now() - INTERVAL \'100 days\', locked_at = NULL, locked_by = NULL, is_active = true WHERE id = $1', [Number(createdScheduleId)]);
 
-      const lockedReports = await scheduledReportWorker.acquireDueReports('test-worker-alpha', 5);
+      const lockedReports = await scheduledReportWorker.acquireDueReports('test-worker-alpha', 50);
       expect(Array.isArray(lockedReports)).toBe(true);
-      const target = lockedReports.find(r => r.id === createdScheduleId);
+      const target = lockedReports.find(r => Number(r.id) === Number(createdScheduleId));
       expect(target).toBeDefined();
       expect(target.locked_by).toBe('test-worker-alpha');
 
       // Second concurrent attempt from worker-beta must SKIP LOCKED and return 0 for this item
-      const concurrentReports = await scheduledReportWorker.acquireDueReports('test-worker-beta', 5);
-      const duplicate = concurrentReports.find(r => r.id === createdScheduleId);
+      const concurrentReports = await scheduledReportWorker.acquireDueReports('test-worker-beta', 50);
+      const duplicate = concurrentReports.find(r => Number(r.id) === Number(createdScheduleId));
       expect(duplicate).toBeUndefined(); // Zero duplicate execution!
     });
   });

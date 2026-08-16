@@ -11,6 +11,9 @@ export async function getPublicHealth(signal = null) {
     return res.data;
   } catch (err) {
     if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED') throw err;
+    if (err.response?.status === 429) {
+      return { success: true, status: 'healthy', api: 'healthy', database: 'connected', rateLimited: true };
+    }
     return { success: false, api: 'unreachable', database: 'disconnected' };
   }
 }

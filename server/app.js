@@ -43,28 +43,6 @@ app.use(
   })
 );
 
-// General API rate limiter
-const generalLimiter = rateLimit({
-  windowMs: 1 * 60 * 1000, // 1 minute
-  max: process.env.RATE_LIMIT_MAX ? parseInt(process.env.RATE_LIMIT_MAX, 10) : (NODE_ENV === 'production' ? 600 : 5000),
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { success: false, message: 'Too many requests, please try again shortly.' }
-});
-app.use('/api/', generalLimiter);
-
-// Specific Auth rate limiter for brute-force protection
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: process.env.AUTH_RATE_LIMIT_MAX ? parseInt(process.env.AUTH_RATE_LIMIT_MAX, 10) : (NODE_ENV === 'production' ? 100 : 1000),
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { success: false, message: 'Too many authentication attempts. Please try again after 15 minutes.' }
-});
-app.use('/api/auth/login', authLimiter);
-app.use('/api/auth/signup', authLimiter);
-app.use('/api/auth/forgot', authLimiter);
-
 app.use(requestId);
 app.use(requestTimer);
 app.use(express.json({ limit: '10mb' }));
@@ -119,33 +97,8 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(morgan(NODE_ENV === 'production' ? 'combined' : 'dev'));
 
-app.get('/', (req, res) => {
-  res.json({
-    name: 'Civic GreenNet API',
-    status: 'online',
-    version: '1.0.0',
-    documentation: '/api/health',
-    endpoints: {
-      health: '/api/health',
-      auth: '/api/auth',
-      public: '/api/public/stats',
-      complaints: '/api/complaints',
-      maps: '/api/maps'
-    }
-  });
-});
-
-app.get('/api', (req, res) => {
-  res.json({
-    name: 'Civic GreenNet API',
-    status: 'online',
-    version: '1.0.0',
-    health: '/api/health',
-    timestamp: new Date().toISOString()
-  });
-});
-
-app.get('/api/health', async (req, res) => {
+// ─── Health Check & Root Diagnostics (Bypass Rate Limiting) ─────────────────
+const handleHealthCheck = async (req, res) => {
   try {
     const db = require('./config/db');
     const start = Date.now();
@@ -189,8 +142,66 @@ app.get('/api/health', async (req, res) => {
       timestamp: new Date().toISOString()
     });
   }
+};
+
+app.get('/health', handleHealthCheck);
+app.get('/api/health', handleHealthCheck);
+
+app.get('/', (req, res) => {
+  res.json({
+    name: 'Civic GreenNet API',
+    status: 'online',
+    version: '1.0.0',
+    documentation: '/api/health',
+    endpoints: {
+      health: '/api/health',
+      auth: '/api/auth',
+      public: '/api/public/stats',
+      complaints: '/api/complaints',
+      maps: '/api/maps'
+    }
+  });
 });
 
+app.get('/api', (req, res) => {
+  res.json({
+    name: 'Civic GreenNet API',
+    status: 'online',
+    version: '1.0.0',
+    health: '/api/health',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// ─── Rate Limiters for Sensitive & General API Routes ────────────────────────
+const generalLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: process.env.RATE_LIMIT_MAX ? parseInt(process.env.RATE_LIMIT_MAX, 10) : (NODE_ENV === 'production' ? 600 : 5000),
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => {
+    return req.path === '/health' || req.path === '/api/health' || req.originalUrl === '/api/health' || req.originalUrl === '/health';
+  },
+  message: { success: false, message: 'Too many requests, please try again shortly.' }
+});
+
+// Specific Auth rate limiter for brute-force protection
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: process.env.AUTH_RATE_LIMIT_MAX ? parseInt(process.env.AUTH_RATE_LIMIT_MAX, 10) : (NODE_ENV === 'production' ? 100 : 1000),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many authentication attempts. Please try again after 15 minutes.' }
+});
+
+app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/signup', authLimiter);
+app.use('/api/auth/forgot', authLimiter);
+
+// General API rate limiter for resource endpoints
+app.use('/api/', generalLimiter);
+
+// ─── API Resource Routes ─────────────────────────────────────────────────────
 app.use('/api', publicRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/complaints', complaintRoutes);

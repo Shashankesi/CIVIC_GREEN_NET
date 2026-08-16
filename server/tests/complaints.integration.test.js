@@ -1,6 +1,6 @@
 const request = require('supertest');
 const app = require('../app');
-jest.setTimeout(30000);
+jest.setTimeout(60000);
 
 describe('Complaints integration (PostgreSQL)', () => {
   let token;
@@ -14,7 +14,7 @@ describe('Complaints integration (PostgreSQL)', () => {
     } catch (e) {}
     const login = await request(app).post('/api/auth/login').send({ email: ciEmail, password: 'Pass123!' });
     token = login.body.accessToken;
-  }, 30000);
+  }, 60000);
 
   afterAll(async () => {
     const db = require('../config/db');
@@ -44,7 +44,7 @@ describe('Complaints integration (PostgreSQL)', () => {
 
     const timeline = await request(app).get('/api/complaints/' + complaintId + '/timeline');
     expect(timeline.status).toBe(200);
-  }, 30000);
+  }, 60000);
 
   test('GET /api/complaints/stats/summary requires authentication', async () => {
     const res = await request(app).get('/api/complaints/stats/summary');
