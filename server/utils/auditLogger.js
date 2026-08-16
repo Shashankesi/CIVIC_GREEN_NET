@@ -2,6 +2,11 @@ const auditLogRepository = require('../repositories/auditLogRepository');
 const db = require('../config/db');
 
 async function log(req, action, targetId, targetType, details = {}) {
+  // Prevent automated test runs from polluting the audit log
+  if (process.env.NODE_ENV === 'test' || process.env.TEST_MODE === 'true') {
+    return;
+  }
+
   try {
     const actorId = req.user?.userId || req.user?.id || null;
     const actorRole = req.user?.role || 'system';

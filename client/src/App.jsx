@@ -5,49 +5,52 @@ import ProtectedRoute from './components/ProtectedRoute'
 import AuthContext from './context/AuthContext'
 import RouteLoader from './ui/RouteLoader'
 
-// Custom lazy loading wrapper that enforces a minimum animation delay so transitions feel complete.
-function lazyWithDelay(importFunc, delayMs = 1200) {
-  return lazy(() => 
-    Promise.all([
-      importFunc(),
-      new Promise(resolve => setTimeout(resolve, delayMs))
-    ]).then(([moduleExports]) => moduleExports)
-  );
-}
-
-const Landing = lazyWithDelay(() => import('./pages/Landing'))
-const Login = lazyWithDelay(() => import('./pages/Login'))
-const Signup = lazyWithDelay(() => import('./pages/Signup'))
-const ForgotPassword = lazyWithDelay(() => import('./pages/ForgotPassword'))
-const ResetPassword = lazyWithDelay(() => import('./pages/ResetPassword'))
-const EmailVerification = lazyWithDelay(() => import('./pages/EmailVerification'))
-const ComplaintForm = lazyWithDelay(() => import('./pages/ComplaintForm'))
-const ComplaintList = lazyWithDelay(() => import('./pages/ComplaintList'))
-const ComplaintView = lazyWithDelay(() => import('./pages/ComplaintView'))
-const Dashboard = lazyWithDelay(() => import('./pages/Dashboard'))
-const Notifications = lazyWithDelay(() => import('./pages/NotificationsPage'))
-const MapPage = lazyWithDelay(() => import('./pages/MapPage'))
-const OfficerPortal = lazyWithDelay(() => import('./pages/OfficerPortal'))
-const AdminPortal = lazyWithDelay(() => import('./pages/AdminPortal'))
-const PendingApproval = lazyWithDelay(() => import('./pages/PendingApproval'))
-const Profile = lazyWithDelay(() => import('./pages/Profile'))
-const Settings = lazyWithDelay(() => import('./pages/Settings'))
-const NotFound = lazyWithDelay(() => import('./pages/NotFound'))
+const Landing = lazy(() => import('./pages/Landing'))
+const Login = lazy(() => import('./pages/Login'))
+const Signup = lazy(() => import('./pages/Signup'))
+const ForgotPassword = lazy(() => import('./pages/ForgotPassword'))
+const ResetPassword = lazy(() => import('./pages/ResetPassword'))
+const EmailVerification = lazy(() => import('./pages/EmailVerification'))
+const ComplaintForm = lazy(() => import('./pages/ComplaintForm'))
+const ComplaintList = lazy(() => import('./pages/ComplaintList'))
+const ComplaintView = lazy(() => import('./pages/ComplaintView'))
+const Dashboard = lazy(() => import('./pages/Dashboard'))
+const Notifications = lazy(() => import('./pages/NotificationsPage'))
+const MapPage = lazy(() => import('./pages/MapPage'))
+const OfficerPortal = lazy(() => import('./pages/OfficerPortal'))
+const OfficerAssignments = lazy(() => import('./pages/OfficerAssignments'))
+const OfficerNearby = lazy(() => import('./pages/OfficerNearby'))
+const OfficerMap = lazy(() => import('./pages/OfficerMap'))
+const OfficerAI = lazy(() => import('./pages/OfficerAI'))
+const OfficerProfile = lazy(() => import('./pages/OfficerProfile'))
+const OfficerOnboarding = lazy(() => import('./pages/OfficerOnboarding'))
+const AdminPortal = lazy(() => import('./pages/AdminPortal'))
+const PendingApproval = lazy(() => import('./pages/PendingApproval'))
+const Profile = lazy(() => import('./pages/Profile'))
+const Settings = lazy(() => import('./pages/Settings'))
+const NotFound = lazy(() => import('./pages/NotFound'))
 
 function withLoader(node) {
   return <Suspense fallback={<RouteLoader />}>{node}</Suspense>
 }
 
-function getHomeRouteForRole(role, status) {
+function getHomeRouteForRole(role, status, settings) {
   if (role === 'admin') return '/admin'
-  if (role === 'officer' && status === 'pending') return '/pending-approval'
-  if (role === 'officer') return '/officer'
+  if (role === 'officer') {
+    if (status === 'pending') {
+      if (settings?.onboarding_status === 'COMPLETED') {
+        return '/pending-approval'
+      }
+      return '/officer/onboarding'
+    }
+    return '/officer'
+  }
   return '/dashboard'
 }
 
 export default function App() {
   const { user, loading } = useContext(AuthContext);
-  const homeRoute = getHomeRouteForRole(user?.role, user?.status)
+  const homeRoute = getHomeRouteForRole(user?.role, user?.status, user?.settings)
 
   if (loading) {
     return (
@@ -64,6 +67,10 @@ export default function App() {
         <Toaster position="top-right" />
         <Routes>
           <Route path="/dashboard" element={withLoader(<Dashboard />)} />
+          <Route path="/verify" element={withLoader(<EmailVerification />)} />
+          <Route path="/verify-email" element={withLoader(<EmailVerification />)} />
+          <Route path="/reset-password" element={withLoader(<ResetPassword />)} />
+          <Route path="/forgot-password" element={withLoader(<ForgotPassword />)} />
           <Route path="/complaints" element={withLoader(<ComplaintList />)} />
           <Route path="/complaints/new" element={withLoader(<ComplaintForm />)} />
           <Route path="/complaints/:id" element={withLoader(<ComplaintView />)} />
@@ -71,9 +78,16 @@ export default function App() {
           <Route path="/map" element={withLoader(<MapPage />)} />
           <Route path="/profile" element={withLoader(<Profile />)} />
           <Route path="/settings" element={withLoader(<Settings />)} />
-          <Route path="/pending-approval" element={withLoader(<ProtectedRoute roles={['officer']} redirectTo={homeRoute}><PendingApproval /></ProtectedRoute>)} />
+          <Route path="/pending-approval" element={withLoader(<ProtectedRoute roles={['officer']} isPendingApprovalRoute={true} redirectTo={homeRoute}><PendingApproval /></ProtectedRoute>)} />
+          <Route path="/officer/onboarding" element={withLoader(<ProtectedRoute roles={['officer', 'admin']} isOnboardingRoute={true}><OfficerOnboarding /></ProtectedRoute>)} />
           <Route path="/officer" element={withLoader(<ProtectedRoute roles={['officer', 'admin']} redirectTo={homeRoute}><OfficerPortal /></ProtectedRoute>)} />
+          <Route path="/officer/assignments" element={withLoader(<ProtectedRoute roles={['officer', 'admin']} redirectTo={homeRoute}><OfficerAssignments /></ProtectedRoute>)} />
+          <Route path="/officer/nearby" element={withLoader(<ProtectedRoute roles={['officer', 'admin']} redirectTo={homeRoute}><OfficerNearby /></ProtectedRoute>)} />
+          <Route path="/officer/map" element={withLoader(<ProtectedRoute roles={['officer', 'admin']} redirectTo={homeRoute}><OfficerMap /></ProtectedRoute>)} />
+          <Route path="/officer/ai" element={withLoader(<ProtectedRoute roles={['officer', 'admin']} redirectTo={homeRoute}><OfficerAI /></ProtectedRoute>)} />
+          <Route path="/officer/profile" element={withLoader(<ProtectedRoute roles={['officer', 'admin']} redirectTo={homeRoute}><OfficerProfile /></ProtectedRoute>)} />
           <Route path="/admin" element={withLoader(<ProtectedRoute roles={['admin']} redirectTo={homeRoute}><AdminPortal /></ProtectedRoute>)} />
+          <Route path="/admin/complaints/:id" element={withLoader(<ProtectedRoute roles={['admin']} redirectTo={homeRoute}><AdminPortal /></ProtectedRoute>)} />
           <Route path="/" element={<Navigate to={homeRoute} replace />} />
           <Route path="*" element={withLoader(<NotFound />)} />
         </Routes>
@@ -94,6 +108,7 @@ export default function App() {
         <Route path="/sign-up" element={withLoader(<Signup />)} />
         <Route path="/forgot-password" element={withLoader(<ForgotPassword />)} />
         <Route path="/reset-password" element={withLoader(<ResetPassword />)} />
+        <Route path="/verify" element={withLoader(<EmailVerification />)} />
         <Route path="/verify-email" element={withLoader(<EmailVerification />)} />
         <Route path="/complaints" element={withLoader(<ComplaintList />)} />
         <Route path="/complaints/new" element={withLoader(<ProtectedRoute><ComplaintForm /></ProtectedRoute>)} />

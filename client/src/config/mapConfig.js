@@ -106,8 +106,43 @@ export const CATEGORY_OPTIONS = [
 ]
 
 export const RADIUS_OPTIONS = [
+  { value: 500,   label: '500 m' },
   { value: 1000,  label: '1 km'  },
+  { value: 2000,  label: '2 km'  },
   { value: 5000,  label: '5 km'  },
   { value: 10000, label: '10 km' },
   { value: 25000, label: '25 km' }
 ]
+
+export const TIME_OPTIONS = [
+  { value: '', label: 'All Time' },
+  { value: '7d', label: 'Last 7 Days' },
+  { value: '30d', label: 'Last 30 Days' },
+  { value: '90d', label: 'Last 90 Days' },
+  { value: '6m', label: 'Last 6 Months' },
+  { value: '1y', label: 'Last 1 Year' }
+]
+
+export const GIS_LAYERS = [
+  { key: 'complaints', label: 'Complaints Pins', icon: '📍', default: true },
+  { key: 'heatmap', label: 'Density Heatmap', icon: '🌡️', default: false },
+  { key: 'hotspots', label: 'AI Civic Hotspots', icon: '🔥', default: true },
+  { key: 'slaRisk', label: 'SLA Risk Map', icon: '⏱️', default: false },
+  { key: 'duplicateClusters', label: 'Duplicate Clusters', icon: '⚠️', default: false },
+  { key: 'recurringZones', label: 'Recurring Defect Zones', icon: '↻', default: false },
+  { key: 'wards', label: 'Ward Boundaries', icon: '🏛️', default: true },
+  { key: 'departments', label: 'Department Coverage', icon: '🏢', default: false }
+]
+
+export const SLA_RISK_META = {
+  overdue: { label: 'Overdue', color: '#ef4444', ring: 8, icon: '🔴' },
+  due_soon: { label: 'Due Soon (<24h)', color: '#f59e0b', ring: 6, icon: '🟡' },
+  on_time: { label: 'On Time', color: '#10b981', ring: 0, icon: '🟢' }
+}
+
+export const HOTSPOT_LEVEL_META = {
+  critical: { label: 'Critical Hotspot', color: '#dc2626', fill: 'rgba(220, 38, 38, 0.25)', border: '#b91c1c' },
+  emerging: { label: 'Emerging Hotspot', color: '#ea580c', fill: 'rgba(234, 88, 12, 0.25)', border: '#c2410c' },
+  recurring: { label: 'Recurring Pattern', color: '#eab308', fill: 'rgba(234, 179, 8, 0.25)', border: '#ca8a04' },
+  normal: { label: 'Complaint Cluster', color: '#2563eb', fill: 'rgba(37, 99, 235, 0.20)', border: '#1d4ed8' }
+}

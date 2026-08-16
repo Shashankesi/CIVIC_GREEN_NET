@@ -14,12 +14,14 @@ export default function Login() {
   const auth = useContext(AuthContext)
   const navigate = useNavigate()
   const [showPassword, setShowPassword] = useState(false)
+  const [unverifiedEmail, setUnverifiedEmail] = useState(null)
 
   function getAuthError(err, fallback) {
     return err?.response?.data?.message || err?.response?.data?.errors?.[0]?.msg || fallback
   }
 
   async function onSubmit(data) {
+    setUnverifiedEmail(null)
     try {
       const payload = {
         email: (data.email || '').trim().toLowerCase(),
@@ -32,6 +34,12 @@ export default function Login() {
       const target = redirectPath || (user?.role === 'admin' ? '/admin' : user?.role === 'officer' && user?.status === 'pending' ? '/pending-approval' : user?.role === 'officer' ? '/officer' : '/dashboard')
       navigate(target)
     } catch (err) {
+      if (err?.response?.data?.code === 'EMAIL_NOT_VERIFIED') {
+        const targetEmail = err?.response?.data?.email || (data.email || '').trim().toLowerCase()
+        setUnverifiedEmail(targetEmail)
+        toast.error('Please verify your email address to continue.')
+        return
+      }
       toast.error(getAuthError(err, 'Login failed'))
     }
   }
@@ -41,6 +49,24 @@ export default function Login() {
       title="Welcome back"
       subtitle="Sign in to track your civic issues and stay updated."
     >
+      {unverifiedEmail && (
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50/80 p-4 text-xs dark:border-amber-900/40 dark:bg-amber-950/20">
+          <p className="font-bold text-amber-900 dark:text-amber-300">
+            Email Verification Required
+          </p>
+          <p className="mt-1 text-slate-600 dark:text-slate-300">
+            Your account email has not been verified yet. We have sent a verification code to your inbox.
+          </p>
+          <div className="mt-3">
+            <Link to={`/verify-email?email=${encodeURIComponent(unverifiedEmail)}`}>
+              <Button size="sm" className="w-full">
+                Enter Verification Code
+              </Button>
+            </Link>
+          </div>
+        </div>
+      )}
+
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
         <div>
           <Input

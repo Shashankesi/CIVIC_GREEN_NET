@@ -1,18 +1,21 @@
-import React, { useEffect, useState, useContext } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { CheckCircle2, Clock, XCircle, Sparkles, User, CornerDownRight, ImagePlus, Loader2 } from 'lucide-react'
+import React, { useEffect, useState } from 'react'
+import { motion } from 'framer-motion'
+import {
+  CheckCircle2, Clock, XCircle, User, FileText, UserPlus,
+  Repeat, RefreshCw, ImageIcon, AlertCircle
+} from 'lucide-react'
 import complaintsApi from '../services/complaints'
-import AuthContext from '../context/AuthContext'
+import { API_BASE } from '../services/api'
 import StatusBadge from '../ui/StatusBadge'
-import Button from '../ui/Button'
 import Skeleton from '../components/Skeleton'
 import EmptyState from '../components/EmptyState'
-import toast from 'react-hot-toast'
 
 function relativeTime(dt) {
   if (!dt) return ''
   const d = new Date(dt)
   const s = Math.floor((Date.now() - d.getTime()) / 1000)
+  if (isNaN(s)) return ''
+  if (s < 10) return 'Just now'
   if (s < 60) return `${s}s ago`
   const m = Math.floor(s / 60)
   if (m < 60) return `${m}m ago`
@@ -20,183 +23,149 @@ function relativeTime(dt) {
   if (h < 24) return `${h}h ago`
   const days = Math.floor(h / 24)
   if (days < 30) return `${days}d ago`
-  return d.toLocaleDateString()
+  return d.toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-function statusTone(status) {
-  if (status === 'resolved') return { icon: CheckCircle2, cls: 'bg-brand-100 text-brand-600 dark:bg-brand-900/40 dark:text-brand-300' }
-  if (status === 'rejected') return { icon: XCircle, cls: 'bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-300' }
-  if (status === 'in_progress') return { icon: Clock, cls: 'bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-300' }
-  return { icon: Clock, cls: 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300' }
+function resolveImageUrl(url) {
+  if (!url) return '';
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  const base = API_BASE;
+  const serverHost = base.replace(/\/api$/, '');
+  return `${serverHost}${url.startsWith('/') ? '' : '/'}${url}`;
+}
+
+function getEventTone(ev) {
+  if (ev.action_type === 'COMPLAINT_CREATED') {
+    return { icon: FileText, cls: 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300 dark:border dark:border-blue-500/30' }
+  }
+  if (ev.action_type === 'ASSIGNED' || ev.action_type === 'REASSIGNED') {
+    return { icon: UserPlus, cls: 'bg-purple-100 text-purple-700 dark:bg-purple-500/20 dark:text-purple-300 dark:border dark:border-purple-500/30' }
+  }
+  if (ev.status_to === 'in_progress') {
+    return { icon: Clock, cls: 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300 dark:border dark:border-amber-500/30' }
+  }
+  if (ev.status_to === 'resolved') {
+    return { icon: CheckCircle2, cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-[#34D399] dark:border dark:border-emerald-500/30' }
+  }
+  if (ev.status_to === 'closed') {
+    return { icon: CheckCircle2, cls: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:border dark:border-slate-700' }
+  }
+  if (ev.status_to === 'rejected') {
+    return { icon: XCircle, cls: 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300 dark:border dark:border-rose-500/30' }
+  }
+  if (ev.status_to === 'reopened') {
+    return { icon: RefreshCw, cls: 'bg-purple-100 text-purple-700 dark:bg-purple-500/20 dark:text-purple-300 dark:border dark:border-purple-500/30' }
+  }
+  return { icon: Clock, cls: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-500/20 dark:text-cyan-300 dark:border dark:border-cyan-500/30' }
 }
 
 export default function Timeline({ complaintId }) {
   const [events, setEvents] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [note, setNote] = useState('')
-  const [file, setFile] = useState(null)
-  const [status, setStatus] = useState('in_progress')
-  const [submitting, setSubmitting] = useState(false)
-  const { user } = useContext(AuthContext)
-
-  const canUpdate = user && (user.role === 'officer' || user.role === 'admin')
 
   useEffect(() => {
     let mounted = true
     setLoading(true)
     complaintsApi.getTimeline(complaintId)
       .then((r) => { if (mounted) setEvents(r) })
-      .catch((e) => { if (mounted) console.error(e) })
+      .catch((e) => { if (mounted) console.error('Failed loading timeline:', e) })
       .finally(() => { if (mounted) setLoading(false) })
     return () => { mounted = false }
   }, [complaintId])
 
-  async function submitStatus(e) {
-    e.preventDefault()
-    if (!note.trim() && !file) {
-      toast.error('Add a note or image to update status.')
-      return
-    }
-    setSubmitting(true)
-    const form = new FormData()
-    form.append('status', status)
-    form.append('note', note)
-    if (file) form.append('image', file)
-    try {
-      await complaintsApi.changeStatus(complaintId, form)
-      const refreshed = await complaintsApi.getTimeline(complaintId)
-      setEvents(refreshed)
-      setNote(''); setFile(null)
-      toast.success('Status updated')
-    } catch (err) {
-      toast.error('Failed to update status')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
   const history = events?.history || []
   const resolutionImages = events?.resolutionImages || []
-  const ai = events?.ai || []
 
   return (
-    <div className="card p-5">
-      <h3 className="mb-4 text-sm font-semibold text-slate-900 dark:text-white">Timeline</h3>
-
+    <div className="space-y-4">
       {loading && (
         <div className="space-y-3">
-          {[0, 1, 2].map((i) => <Skeleton key={i} className="h-16 rounded-lg" />)}
+          {[0, 1, 2].map((i) => <Skeleton key={i} className="h-16 rounded-xl" />)}
         </div>
       )}
 
       {!loading && history.length === 0 && (
-        <EmptyState title="No timeline events yet" subtitle="Status updates will appear here." icon={Clock} />
+        <EmptyState title="No timeline events yet" subtitle="Authoritative history events will appear as actions occur." icon={Clock} />
       )}
 
       {history.length > 0 && (
-        <ol className="relative space-y-6 border-l border-slate-200 pl-6 dark:border-slate-700">
-          {history.map((ev, idx) => {
-            const cfg = statusTone(ev.status_to)
+        <ol className="relative space-y-6 border-l-2 border-slate-200 pl-6 dark:border-slate-800">
+          {history.map((ev) => {
+            const cfg = getEventTone(ev)
             const Icon = cfg.icon
-            const isLast = idx === history.length - 1
+
             return (
               <motion.li
                 key={ev.id}
                 initial={{ opacity: 0, x: -8 }}
                 animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.15 }}
                 className="relative"
               >
-                <span className={`absolute -left-[31px] flex h-6 w-6 items-center justify-center rounded-full ring-4 ring-white dark:ring-slate-800 ${cfg.cls}`}>
+                {/* Status Dot / Icon */}
+                <span className={`absolute -left-[35px] flex h-7 w-7 items-center justify-center rounded-full ring-4 ring-white dark:ring-slate-900 shadow-sm ${cfg.cls}`}>
                   <Icon className="h-3.5 w-3.5" aria-hidden="true" />
                 </span>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-800 dark:text-slate-100">
-                    <User className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
-                    {ev.changed_by_name || 'System'}
-                  </span>
-                  <span className="text-xs text-slate-400">{ev.changed_by_role}</span>
-                  <StatusBadge status={ev.status_to} />
+
+                {/* Event Card Content */}
+                <div className="rounded-xl border border-slate-100 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-800/40 p-3.5 space-y-1.5 shadow-2xs">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-black text-slate-900 dark:text-white flex items-center gap-1.5">
+                        <User className="h-3.5 w-3.5 text-slate-400" />
+                        {ev.changed_by_name || 'User'}
+                      </span>
+                      <span className="rounded-full bg-slate-200 dark:bg-slate-700 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-slate-600 dark:text-slate-300">
+                        {ev.changed_by_role || 'Citizen'}
+                      </span>
+                    </div>
+
+                    <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500">
+                      {relativeTime(ev.created_at)}
+                    </span>
+                  </div>
+
+                  {/* Action Title */}
+                  <div className="flex items-center justify-between gap-2 pt-0.5">
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                      {ev.action_title || 'Action Event'}
+                    </span>
+                    {ev.status_to && <StatusBadge status={ev.status_to} />}
+                  </div>
+
+                  {/* Fact-based note from database (only if provided by user) */}
+                  {ev.note && (
+                    <p className="text-xs text-slate-600 dark:text-slate-300 leading-normal pt-1 border-t border-slate-200/60 dark:border-slate-700/60 font-normal">
+                      "{ev.note}"
+                    </p>
+                  )}
                 </div>
-                <div className="mt-1 text-sm text-slate-500 dark:text-slate-400">{ev.note || 'Status changed'}</div>
-                <div className="mt-0.5 text-xs text-slate-400">{relativeTime(ev.created_at)}</div>
               </motion.li>
             )
           })}
         </ol>
       )}
 
-      {/* Resolution images */}
+      {/* Resolution Proof Evidence Images */}
       {resolutionImages.length > 0 && (
-        <div className="mt-6">
-          <h4 className="mb-2 text-sm font-semibold text-slate-800 dark:text-white">Resolution Images</h4>
-          <div className="flex flex-wrap gap-3">
+        <div className="mt-5 border-t border-slate-100 dark:border-slate-800 pt-4">
+          <h4 className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+            <ImageIcon className="h-4 w-4 text-emerald-500" /> Resolution Evidence ({resolutionImages.length})
+          </h4>
+          <div className="flex flex-wrap gap-2.5">
             {resolutionImages.map((img) => (
-              <a key={img.id} href={img.url} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
-                <img src={img.url} alt="Resolution" className="h-24 w-32 object-cover transition-transform duration-300 hover:scale-105" />
+              <a
+                key={img.id}
+                href={resolveImageUrl(img.url)}
+                target="_blank"
+                rel="noreferrer"
+                className="block overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-all"
+              >
+                <img src={resolveImageUrl(img.url)} alt="Resolution Evidence Proof" className="h-20 w-28 object-cover hover:scale-105 transition-transform" />
               </a>
             ))}
           </div>
         </div>
-      )}
-
-      {/* AI analysis */}
-      {ai.length > 0 && (
-        <div className="mt-6 rounded-lg border border-ai/20 bg-gradient-to-br from-ai/5 to-indigo-500/5 p-4">
-          <div className="mb-3 flex items-center gap-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-ai/10 text-ai"><Sparkles className="h-4 w-4" aria-hidden="true" /></span>
-            <h4 className="text-sm font-semibold text-slate-800 dark:text-white">AI Analysis</h4>
-          </div>
-          <div className="space-y-3">
-            {ai.map((a) => (
-              <div key={a.id} className="rounded-lg bg-white/70 p-3 dark:bg-slate-900/40">
-                <p className="text-sm text-slate-700 dark:text-slate-200">
-                  {a.analysis?.summary || (typeof a.analysis === 'object' ? JSON.stringify(a.analysis) : a.analysis) || 'AI analysis complete.'}
-                </p>
-                {a.confidence != null && (
-                  <div className="mt-2 flex items-center gap-2">
-                    <div className="h-1.5 w-24 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
-                      <div className="h-full rounded-full bg-gradient-to-r from-ai to-indigo-500" style={{ width: `${Math.min(100, a.confidence * 100)}%` }} />
-                    </div>
-                    <span className="text-xs text-slate-500 dark:text-slate-400">{Math.round(a.confidence * 100)}% confidence</span>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Officer update form */}
-      {canUpdate && (
-        <form onSubmit={submitStatus} className="mt-6 rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/50">
-          <h4 className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-white">
-            <CornerDownRight className="h-4 w-4 text-slate-400" aria-hidden="true" /> Update Status
-          </h4>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div>
-              <label htmlFor="tl-status" className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">New Status</label>
-              <select id="tl-status" value={status} onChange={(e) => setStatus(e.target.value)} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:border-brand-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200">
-                <option value="in_progress">In Progress</option>
-                <option value="resolved">Resolved</option>
-                <option value="rejected">Rejected</option>
-              </select>
-            </div>
-            <div>
-              <label htmlFor="tl-file" className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Resolution Image (optional)</label>
-              <input id="tl-file" type="file" accept="image/*" onChange={(e) => setFile(e.target.files[0])} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 file:mr-2 file:rounded file:border-0 file:bg-slate-100 file:px-3 file:py-1 file:text-xs file:font-medium dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:file:bg-slate-700" />
-            </div>
-          </div>
-          <div className="mt-3">
-            <label htmlFor="tl-note" className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Note</label>
-            <textarea id="tl-note" value={note} onChange={(e) => setNote(e.target.value)} rows={3} placeholder="Add a note about this update…" className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:border-brand-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200" />
-          </div>
-          <div className="mt-3 flex justify-end">
-            <Button type="submit" disabled={submitting} className="inline-flex items-center gap-2">
-              {submitting && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
-              {submitting ? 'Updating…' : 'Update Status'}
-            </Button>
-          </div>
-        </form>
       )}
     </div>
   )

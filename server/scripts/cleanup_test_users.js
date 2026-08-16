@@ -10,7 +10,7 @@ const db = require('../config/db'); // Adjust path if script location changes
   try {
     // Fetch users matching test patterns
     const { rows: testUsers } = await db.query(
-      `SELECT id, email FROM users WHERE LOWER(email) LIKE $1 OR LOWER(email) LIKE $2`,
+      `SELECT id, email FROM users WHERE (LOWER(email) LIKE $1 OR LOWER(email) LIKE $2) AND role != 'admin'`,
       ['%test%', '%@example.com']
     );
 

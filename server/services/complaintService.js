@@ -1,33 +1,16 @@
 const complaintRepo = require('../repositories/complaintRepository');
-const ai = require('../config/gemini');
-const groq = require('../config/groq');
 const cloudinary = require('../config/cloudinary');
 const logger = require('../utils/logger');
+const { classifyComplaint } = require('./ai/complaintClassifier');
+const { detectDuplicates } = require('./ai/duplicateDetector');
+const { recommendRouting } = require('./ai/routingEngine');
+const realtimeGateway = require('./realtimeGateway');
 
 async function createComplaint(payload, files = []) {
   // payload: userId, departmentId, description, category, priority, severity, address, location
-  const { description, title } = payload;
-  // attempt AI analysis
-  let analysis = null;
-  try {
-    const text = `${title || ''}\n${description || ''}`;
-    const aiRes = await ai.analyzeComplaint(text);
-    analysis = aiRes;
-  } catch (err) {
-    logger.error('AI analysis failed (Gemini)', { err: err.message });
-    // Groq fallback (text classification/summarization) if configured.
-    try {
-      if (groq && typeof groq.isConfigured === 'function' && groq.isConfigured()) {
-        const text = `${title || ''}\n${description || ''}`;
-        analysis = await groq.analyzeComplaint(text);
-        logger.info('AI analysis completed via Groq fallback');
-      }
-    } catch (groqErr) {
-      logger.error('AI analysis failed (Groq fallback)', { err: groqErr.message });
-    }
-  }
+  const { description, title, category: citizenCategory, address, location } = payload;
 
-  // Calculate SLA due date
+  // 1. Calculate SLA due date based on citizen priority
   const priority = payload.priority || 'medium';
   let hours = 72;
   const prioLower = String(priority).toLowerCase();
@@ -37,59 +20,140 @@ async function createComplaint(payload, files = []) {
   else if (prioLower === 'low')    hours = 168; // 7 days
   const sla_due_at = new Date(Date.now() + hours * 60 * 60 * 1000);
 
-  // create complaint record (store AI summary if available)
-  const summary = analysis ? (analysis.summary || null) : null;
+  // 2. Perform AI Classification
+  let classification = null;
+  try {
+    realtimeGateway.publishAiEvent('AI_ANALYSIS_STARTED', { 
+      message: 'AI intelligence analyzing civic complaint...',
+      userId: payload.userId 
+    }, 'admin', payload.userId);
+
+    classification = await classifyComplaint({
+      title,
+      description,
+      citizenCategory,
+      address,
+      location
+    });
+  } catch (aiErr) {
+    logger.warn('[Complaint Service] AI classification failed, using fallback:', { err: aiErr.message });
+  }
+
+  // 3. Create complaint record in PostgreSQL
+  const summary = classification ? (classification.reason || classification.subcategory) : null;
   const complaint = await complaintRepo.createComplaint({
     ...payload,
     summary,
-    title: payload.title || (analysis && analysis.title),
+    title: payload.title || (classification && classification.subcategory) || 'Civic Issue',
     sla_due_at
   });
 
-  // store AI analysis
-  if (analysis) {
+  // 4. Perform Duplicate Detection & Smart Routing Recommendation
+  let duplicateResult = { isPotentialDuplicate: false, possibleDuplicates: [] };
+  let routingRecommendation = null;
+
+  try {
+    const lat = location?.lat || (typeof location === 'object' && location?.latitude);
+    const lng = location?.lng || (typeof location === 'object' && location?.longitude);
+
+    duplicateResult = await detectDuplicates({
+      complaintId: complaint.id,
+      title: complaint.title,
+      description: complaint.description,
+      category: classification?.category || complaint.category,
+      lat,
+      lng,
+      address: complaint.address
+    });
+
+    if (duplicateResult.isPotentialDuplicate) {
+      complaint.duplicates = duplicateResult.possibleDuplicates;
+      realtimeGateway.publishAiEvent('DUPLICATE_DETECTED', {
+        complaintId: complaint.id,
+        ticketId: `CGN-${String(complaint.id).padStart(5, '0')}`,
+        duplicateCount: duplicateResult.possibleDuplicates.length,
+        topSimilarity: duplicateResult.similarity,
+        possibleDuplicates: duplicateResult.possibleDuplicates
+      }, 'admin');
+    }
+
+    routingRecommendation = await recommendRouting({
+      category: classification?.category || complaint.category,
+      priority: classification?.priority || complaint.priority,
+      severity: classification?.severity || complaint.severity,
+      address: complaint.address
+    });
+
+    if (routingRecommendation?.recommendedOfficer) {
+      realtimeGateway.publishAiEvent('AI_ROUTING_RECOMMENDATION_READY', {
+        complaintId: complaint.id,
+        ticketId: `CGN-${String(complaint.id).padStart(5, '0')}`,
+        recommendation: routingRecommendation
+      }, 'admin');
+    }
+  } catch (dupErr) {
+    logger.warn('[Complaint Service] Duplicate/Routing analysis warning:', { err: dupErr.message });
+  }
+
+  // 5. Store AI analysis & audit logs in PostgreSQL
+  if (classification) {
     try {
       const db = require('../config/db');
-      // attempt to generate embedding if possible and attach to analysis
-      if (typeof ai.getEmbedding === 'function') {
-        try {
-          const textForEmbedding = `${title || ''}\n${description || ''}`;
-          const emb = await ai.getEmbedding(textForEmbedding);
-          if (emb && Array.isArray(emb)) {
-            analysis.embedding = emb;
-          }
-        } catch (e) {
-          logger.warn('Embedding generation failed at creation time', { err: e });
-        }
+      if (db._pool) {
+        await db.query(
+          `INSERT INTO ai_analysis (
+             complaint_id, analysis, confidence, category, subcategory, priority, severity,
+             department_recommendation, department_id_recommendation, reason, keywords,
+             suggested_actions, risk_assessment, duplicate_candidates, model_used, created_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, now())`,
+          [
+            complaint.id,
+            classification,
+            classification.confidence || 0.80,
+            classification.category,
+            classification.subcategory,
+            classification.priority,
+            classification.severity,
+            routingRecommendation?.recommendedDepartment || classification.department,
+            routingRecommendation?.departmentId || null,
+            classification.reason,
+            classification.keywords || [],
+            classification.suggested_actions || [],
+            classification.risk_assessment || null,
+            JSON.stringify(duplicateResult.possibleDuplicates || []),
+            classification.modelUsed || 'hybrid:ai'
+          ]
+        );
+
+        // Record AI audit log
+        await db.query(
+          `INSERT INTO ai_audit_logs (complaint_id, event_type, model_used, recommendation, confidence, user_id, details, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, now())`,
+          [
+            complaint.id,
+            'AI_CLASSIFICATION_CREATED',
+            classification.modelUsed || 'hybrid:ai',
+            { classification, routing: routingRecommendation },
+            classification.confidence || 0.80,
+            payload.userId || null,
+            { isFallback: classification.isFallback || false }
+          ]
+        );
       }
 
-      // try to insert embedding into vector column if DB supports it; otherwise store analysis JSON
-      try {
-        if (db._pool) {
-          // prefer to store embedding into embedding column if present
-          const hasEmbeddingCol = await db.query("SELECT column_name FROM information_schema.columns WHERE table_name='ai_analysis' AND column_name='embedding'");
-          if (hasEmbeddingCol.rows.length && analysis.embedding && Array.isArray(analysis.embedding)) {
-            const vectorStr = '[' + analysis.embedding.join(',') + ']';
-            const q = `INSERT INTO ai_analysis(complaint_id,analysis,confidence,embedding,created_at) VALUES($1,$2,$3,$4::vector,now())`;
-            await db.query(q, [complaint.id, analysis, analysis.confidence || null, vectorStr]);
-          } else {
-            const q = `INSERT INTO ai_analysis(complaint_id,analysis,confidence,created_at) VALUES($1,$2,$3,now())`;
-            await db.query(q, [complaint.id, analysis, analysis.confidence || null]);
-          }
-        } else {
-          // mock DB: insert as JSON only
-          const q = `INSERT INTO ai_analysis(complaint_id,analysis,confidence,created_at) VALUES($1,$2,$3,now())`;
-          await require('../config/db').query(q, [complaint.id, analysis, analysis.confidence || null]);
-        }
-      } catch (e) {
-        logger.error('Failed to store AI analysis', { err: e });
-      }
+      realtimeGateway.publishAiEvent('AI_ANALYSIS_COMPLETED', {
+        complaintId: complaint.id,
+        ticketId: `CGN-${String(complaint.id).padStart(5, '0')}`,
+        classification,
+        routing: routingRecommendation,
+        isDuplicate: duplicateResult.isPotentialDuplicate
+      }, 'admin', payload.userId);
     } catch (e) {
-      logger.error('Failed to store AI analysis', { err: e });
+      logger.error('Failed to store AI analysis / audit log', { err: e.message });
     }
   }
 
-  // upload images to Cloudinary
+  // 6. Upload images to Cloudinary
   for (const file of files) {
     try {
       const dataUri = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
@@ -98,81 +162,6 @@ async function createComplaint(payload, files = []) {
     } catch (e) {
       logger.warn('Image upload failed', { err: e });
     }
-  }
-
-  // duplicate detection: try embeddings first, fallback to trigram
-  try {
-    const text = (payload.title || '') + ' ' + (payload.description || '');
-    let duplicates = [];
-    try {
-      // generate or reuse embedding
-      let embedding = null;
-      try {
-        embedding = await ai.getEmbedding(text);
-      } catch (e) {
-        logger.warn('Embedding generation failed for duplicate detection', { err: e });
-      }
-
-      const db = require('../config/db');
-      if (embedding && db._pool) {
-        // if pgvector exists, use vector NN search
-        try {
-          const ext = await db.query("SELECT 1 FROM pg_extension WHERE extname='vector'");
-          if (ext.rows.length) {
-            const vectorStr = '[' + embedding.join(',') + ']';
-            const rows = await db.query('SELECT complaint_id, embedding <-> $1::vector AS distance FROM ai_analysis ORDER BY distance ASC LIMIT $2', [vectorStr, 10]);
-            const cand = rows.rows.map(r => ({ id: r.complaint_id, score: 1 / (1 + parseFloat(r.distance)) }));
-            duplicates = cand.filter(d => d.id && d.score > 0.75).slice(0, 5);
-          }
-        } catch (e) {
-          logger.warn('pgvector similarity query failed', { err: e });
-        }
-      }
-
-      // if no duplicates yet, try JSON-embedded vectors stored in analysis
-      if (!duplicates.length && embedding) {
-        try {
-          const rows = await require('../config/db').query("SELECT complaint_id, analysis FROM ai_analysis WHERE analysis ? 'embedding'");
-          const candidates = [];
-          for (const rRow of rows.rows) {
-            try {
-              const analysisObj = rRow.analysis || rRow.analysis;
-              const emb = analysisObj && analysisObj.embedding ? analysisObj.embedding : null;
-              if (emb && Array.isArray(emb)) candidates.push({ complaint_id: rRow.complaint_id, embedding: emb });
-            } catch (e) {}
-          }
-          const sim = (a, b) => {
-            let dot = 0, na = 0, nb = 0;
-            for (let i = 0; i < a.length; i++) { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]; }
-            return dot / (Math.sqrt(na) * Math.sqrt(nb) + 1e-12);
-          };
-          const scored = [];
-          for (const c of candidates) { const s = sim(embedding, c.embedding); scored.push({ id: c.complaint_id, score: s }); }
-          scored.sort((a, b) => b.score - a.score);
-          duplicates = scored.filter((s) => s.score > 0.75).slice(0, 5);
-        } catch (e) {
-          logger.warn('JSON embedding duplicate detection failed', { err: e });
-        }
-      }
-    } catch (e) {
-      logger.warn('Embeddings duplicate detection failed, falling back', { err: e });
-    }
-
-    if (!duplicates.length) {
-      // trigram fallback
-      const trig = await complaintRepo.findPotentialDuplicates(text);
-      duplicates = trig.map((t) => ({ id: t.id, score: t.score }));
-    }
-
-    if (duplicates && duplicates.length) {
-      const q = 'INSERT INTO duplicate_complaints(complaint_id,duplicate_of,score,created_at) VALUES($1,$2,$3,now())';
-      for (const d of duplicates) {
-        await require('../config/db').query(q, [complaint.id, d.id, d.score]);
-      }
-      complaint.duplicates = duplicates;
-    }
-  } catch (e) {
-    logger.error('Duplicate detection failed', { err: e });
   }
 
   // Send email notification to citizen
@@ -190,11 +179,67 @@ async function createComplaint(payload, files = []) {
     }
   }
 
+  // Create database notification for admins
+  try {
+    const db = require('../config/db');
+    const { rows: admins } = await db.query("SELECT id FROM users WHERE role='admin'");
+    const notificationService = require('./notificationService');
+    for (const admin of admins) {
+      await notificationService.create(admin.id, 'COMPLAINT', {
+        title: 'New Complaint Submitted',
+        message: `Complaint #CGN-${String(complaint.id).padStart(5, '0')} requires attention.`,
+        subtitle: `${complaint.title} reported in ${complaint.address || 'Chandigarh'}`,
+        complaintId: complaint.id
+      });
+    }
+  } catch (err) {
+    logger.warn('Failed to create admin notifications for new complaint', { err: err.message });
+  }
+
+  // Real-time event dispatch
+  try {
+    const realtimeGateway = require('./realtimeGateway');
+    realtimeGateway.publishComplaintEvent('COMPLAINT_CREATED', complaint);
+  } catch (rtErr) {
+    logger.warn('Failed to publish real-time COMPLAINT_CREATED event', { err: rtErr.message });
+  }
+
   return complaint;
 }
 
+async function enrichComplaintsWithImages(complaints) {
+  if (!complaints || !complaints.length) return complaints;
+  const ids = complaints.map(c => c.id);
+  const db = require('../config/db');
+  try {
+    const r = await db.query('SELECT id, complaint_id, url, public_id, metadata, created_at FROM complaint_images WHERE complaint_id = ANY($1) ORDER BY created_at', [ids]);
+    const imagesByComplaintId = {};
+    r.rows.forEach(img => {
+      if (!imagesByComplaintId[img.complaint_id]) {
+        imagesByComplaintId[img.complaint_id] = [];
+      }
+      imagesByComplaintId[img.complaint_id].push(img);
+    });
+    complaints.forEach(c => {
+      c.images = imagesByComplaintId[c.id] || [];
+    });
+  } catch (e) {
+    logger.warn('Failed to enrich complaints with images', { err: e.message || e });
+    complaints.forEach(c => {
+      c.images = [];
+    });
+  }
+  return complaints;
+}
+
 async function listComplaints(opts) {
-  return complaintRepo.listComplaints(opts);
+  const rows = await complaintRepo.listComplaints(opts);
+  return enrichComplaintsWithImages(rows);
+}
+
+async function searchComplaints(opts) {
+  const rows = await complaintRepo.searchComplaints(opts);
+  return enrichComplaintsWithImages(rows);
 }
 
 async function getComplaint(id) {
@@ -234,4 +279,4 @@ async function deleteComplaint(id) {
   return complaintRepo.deleteComplaint(id);
 }
 
-module.exports = { createComplaint, listComplaints, getComplaint, updateComplaint, deleteComplaint };
+module.exports = { createComplaint, listComplaints, searchComplaints, getComplaint, updateComplaint, deleteComplaint, enrichComplaintsWithImages };

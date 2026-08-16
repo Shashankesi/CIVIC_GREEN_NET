@@ -1,7 +1,8 @@
 import React, { useContext } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Leaf, MapPin, Sparkles, ShieldCheck, TrendingUp } from 'lucide-react'
+import { MapPin, Sparkles, ShieldCheck, TrendingUp } from 'lucide-react'
+import CivicGreenNetLogo from './brand/CivicGreenNetLogo'
 import ThemeContext from '../context/ThemeContext'
 
 export default function AuthLayout({ children, title, subtitle }) {
@@ -17,13 +18,8 @@ export default function AuthLayout({ children, title, subtitle }) {
         <div className="gradient-blob absolute left-1/3 top-1/2 h-64 w-64 rounded-full bg-cyan-400/30" aria-hidden="true" />
 
         {/* Logo */}
-        <div className="relative z-10 flex items-center gap-2">
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/15 text-white backdrop-blur">
-            <Leaf className="h-5 w-5" aria-hidden="true" />
-          </span>
-          <span className="text-xl font-bold text-white">
-            Civic<span className="text-emerald-300">GreenNet</span>
-          </span>
+        <div className="relative z-10">
+          <CivicGreenNetLogo variant="horizontal" theme="white" size="lg" />
         </div>
 
         {/* Center content */}
@@ -76,11 +72,8 @@ export default function AuthLayout({ children, title, subtitle }) {
       <div className="flex w-full flex-1 flex-col p-6 sm:p-10">
         {/* Mobile top bar */}
         <div className="mb-8 flex items-center justify-between lg:justify-end">
-          <Link to="/" className="flex items-center gap-2 lg:hidden">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-600 text-white">
-              <Leaf className="h-5 w-5" aria-hidden="true" />
-            </span>
-            <span className="text-lg font-bold text-slate-900 dark:text-white">Civic<span className="text-brand-600 dark:text-brand-400">GreenNet</span></span>
+          <Link to="/" className="flex items-center lg:hidden">
+            <CivicGreenNetLogo variant="horizontal" size="sm" />
           </Link>
           <button
             onClick={() => setDark(!dark)}

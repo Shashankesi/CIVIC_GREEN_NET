@@ -11,19 +11,58 @@ function buildFilters(opts, startIdx = 1) {
   const vals = [];
   let idx = startIdx;
 
-  if (opts.search) {
-    conditions.push(`(c.title ILIKE $${idx} OR c.description ILIKE $${idx} OR c.summary ILIKE $${idx})`);
-    vals.push(`%${opts.search}%`);
+  if (opts.search && String(opts.search).trim()) {
+    const term = String(opts.search).trim();
+    conditions.push(`(c.title ILIKE $${idx} OR c.description ILIKE $${idx} OR c.summary ILIKE $${idx} OR c.address ILIKE $${idx} OR u.name ILIKE $${idx} OR c.id::text ILIKE $${idx} OR ('CGN-' || lpad(c.id::text, 5, '0')) ILIKE $${idx})`);
+    vals.push(`%${term}%`);
     idx++;
   }
-  if (opts.status) { conditions.push(`c.status = $${idx++}`); vals.push(opts.status); }
-  if (opts.priority) { conditions.push(`c.priority = $${idx++}`); vals.push(opts.priority); }
-  if (opts.category) { conditions.push(`c.category = $${idx++}`); vals.push(opts.category); }
-  if (opts.departmentId) { conditions.push(`c.department_id = $${idx++}`); vals.push(opts.departmentId); }
-  if (opts.officerId) { conditions.push(`c.officer_id = $${idx++}`); vals.push(opts.officerId); }
-  if (opts.userId) { conditions.push(`c.user_id = $${idx++}`); vals.push(opts.userId); }
-  if (opts.dateFrom) { conditions.push(`c.created_at >= $${idx++}`); vals.push(opts.dateFrom); }
-  if (opts.dateTo) { conditions.push(`c.created_at <= $${idx++}`); vals.push(opts.dateTo); }
+  if (opts.status && String(opts.status).trim()) {
+    const rawStatus = String(opts.status).trim().toLowerCase().replace('-', '_');
+    conditions.push(`c.status = $${idx++}`);
+    vals.push(rawStatus);
+  }
+  if (opts.priority && String(opts.priority).trim()) {
+    conditions.push(`c.priority = $${idx++}`);
+    vals.push(String(opts.priority).trim().toLowerCase());
+  }
+  if (opts.category && String(opts.category).trim()) {
+    conditions.push(`c.category = $${idx++}`);
+    vals.push(String(opts.category).trim());
+  }
+  if (opts.departmentId && !isNaN(parseInt(opts.departmentId, 10))) {
+    conditions.push(`c.department_id = $${idx++}`);
+    vals.push(parseInt(opts.departmentId, 10));
+  }
+  if (opts.officerId && !isNaN(parseInt(opts.officerId, 10))) {
+    conditions.push(`c.officer_id = $${idx++}`);
+    vals.push(parseInt(opts.officerId, 10));
+  }
+  if (opts.userId && !isNaN(parseInt(opts.userId, 10))) {
+    conditions.push(`c.user_id = $${idx++}`);
+    vals.push(parseInt(opts.userId, 10));
+  }
+  if (opts.dateFrom && String(opts.dateFrom).trim()) {
+    conditions.push(`c.created_at >= $${idx++}::timestamp`);
+    vals.push(opts.dateFrom);
+  }
+  if (opts.dateTo && String(opts.dateTo).trim()) {
+    conditions.push(`c.created_at < ($${idx++}::date + INTERVAL '1 day')`);
+    vals.push(opts.dateTo);
+  }
+
+  if (opts.assignment === 'assigned') {
+    conditions.push(`c.officer_id IS NOT NULL`);
+  } else if (opts.assignment === 'unassigned') {
+    conditions.push(`c.officer_id IS NULL`);
+  }
+
+  if (opts.dueSoon === 'true' || opts.dueSoon === true) {
+    conditions.push(`c.status NOT IN ('resolved', 'closed', 'rejected') AND c.sla_due_at IS NOT NULL AND c.sla_due_at > now() AND c.sla_due_at <= now() + INTERVAL '24 hours'`);
+  }
+  if (opts.overdue === 'true' || opts.overdue === true) {
+    conditions.push(`c.status NOT IN ('resolved', 'closed', 'rejected') AND c.sla_due_at IS NOT NULL AND c.sla_due_at < now()`);
+  }
 
   return { conditions, vals, idx };
 }
@@ -46,7 +85,14 @@ async function listComplaints(opts = {}) {
   const orderCol = ALLOWED_SORT.has(sortBy) ? sortBy : 'created_at';
   const orderDir = sortDir && sortDir.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
 
-  const countQ = `SELECT COUNT(*)::int AS total FROM complaints c ${where}`;
+  const countQ = `
+    SELECT COUNT(*)::int AS total 
+    FROM complaints c 
+    LEFT JOIN users u ON u.id = c.user_id
+    LEFT JOIN departments d ON d.id = c.department_id
+    LEFT JOIN users o ON o.id = c.officer_id
+    ${where}
+  `;
   const countR = await db.query(countQ, vals);
   const total = countR.rows[0] ? countR.rows[0].total : 0;
 
@@ -65,6 +111,8 @@ async function listComplaints(opts = {}) {
       c.is_anonymous,
       c.created_at,
       c.assigned_at,
+      c.sla_due_at,
+      c.resolution_at,
       c.user_id,
       c.department_id,
       c.officer_id,
@@ -85,6 +133,28 @@ async function listComplaints(opts = {}) {
   `;
   const listVals = [...vals, limit, offset];
   const r = await db.query(qStr, listVals);
+
+  if (r.rows.length > 0) {
+    const ids = r.rows.map(c => c.id);
+    try {
+      const imgR = await db.query('SELECT id, complaint_id, url, public_id, metadata, created_at FROM complaint_images WHERE complaint_id = ANY($1) ORDER BY created_at', [ids]);
+      const imagesByComplaintId = {};
+      imgR.rows.forEach(img => {
+        if (!imagesByComplaintId[img.complaint_id]) {
+          imagesByComplaintId[img.complaint_id] = [];
+        }
+        imagesByComplaintId[img.complaint_id].push(img);
+      });
+      r.rows.forEach(c => {
+        c.images = imagesByComplaintId[c.id] || [];
+      });
+    } catch (e) {
+      console.error('Admin repository failed to fetch images for complaints:', e);
+      r.rows.forEach(c => {
+        c.images = [];
+      });
+    }
+  }
 
   return { items: r.rows, total, page, limit };
 }
@@ -108,6 +178,8 @@ async function getComplaintById(id) {
       c.is_anonymous,
       c.created_at,
       c.assigned_at,
+      c.sla_due_at,
+      c.resolution_at,
       c.user_id,
       c.department_id,
       c.officer_id,

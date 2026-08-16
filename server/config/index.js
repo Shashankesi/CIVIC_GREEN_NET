@@ -20,11 +20,12 @@ module.exports = {
     REFRESH_EXP: process.env.JWT_REFRESH_EXP || '7d'
   },
   EMAIL: {
-    SMTP_HOST: process.env.SMTP_HOST,
-    SMTP_PORT: process.env.SMTP_PORT,
-    SMTP_USER: process.env.SMTP_USER,
-    SMTP_PASS: process.env.SMTP_PASS,
-    FROM: process.env.EMAIL_FROM
+    RESEND_API_KEY: process.env.RESEND_API_KEY,
+    PROVIDER: process.env.EMAIL_PROVIDER || 'resend',
+    FROM: process.env.EMAIL_FROM || 'Civic GreenNet <notifications@civicgreennet.dev>',
+    REPLY_TO: process.env.EMAIL_REPLY_TO || 'civicgreennet@gmail.com',
+    ADMIN_EMAIL: process.env.ADMIN_EMAIL,
+    SUPPORT_EMAIL: process.env.SUPPORT_EMAIL || 'civicgreennet@gmail.com'
   },
   CLOUDINARY: {
     CLOUD_NAME: process.env.CLOUDINARY_CLOUD_NAME,

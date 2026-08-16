@@ -5,13 +5,26 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejec
 
 (async () => {
   try {
-    // 1. Get all complaints that we should keep
-    // Keep #35 (Pothole) and #12 (Illegal garbage dumping behind market)
-    const keepIds = [12, 35];
-
-    // Select the complaints to delete
-    const selectQ = 'SELECT id, title, summary FROM complaints WHERE id NOT IN ($1, $2)';
-    const { rows: testComplaints } = await pool.query(selectQ, keepIds);
+    // Select the complaints to delete dynamically using test keywords and test email suffixes
+    const selectQ = `
+      SELECT DISTINCT c.id, c.title, c.summary 
+      FROM complaints c
+      LEFT JOIN users u ON u.id = c.user_id
+      WHERE 
+        LOWER(c.title) LIKE '%test%' OR
+        LOWER(c.title) LIKE '%mock%' OR
+        LOWER(c.title) LIKE '%demo%' OR
+        LOWER(c.title) LIKE '%ci %' OR
+        LOWER(c.title) = 'ci updated' OR
+        LOWER(c.title) = 'ci complaint' OR
+        LOWER(c.title) = 'broken street light on 5th avenue' OR
+        LOWER(c.description) LIKE '%test%' OR
+        LOWER(c.description) LIKE '%mock%' OR
+        LOWER(c.description) LIKE '%demo%' OR
+        LOWER(u.email) LIKE '%test%' OR
+        LOWER(u.email) LIKE '%@example.com'
+    `;
+    const { rows: testComplaints } = await pool.query(selectQ);
 
     if (testComplaints.length === 0) {
       console.log('✅ No test complaints found in database.');

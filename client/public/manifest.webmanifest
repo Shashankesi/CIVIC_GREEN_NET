@@ -1,0 +1,41 @@
+{
+  "name": "Civic GreenNet — Citizen Platform",
+  "short_name": "CivicGreenNet",
+  "description": "Smart Civic Governance, Community Trust & Engagement Platform",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#07111F",
+  "theme_color": "#059669",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Report Issue",
+      "short_name": "Report",
+      "description": "Report a new civic issue in your neighborhood",
+      "url": "/complaints/new",
+      "icons": [{ "src": "/favicon.svg", "sizes": "192x192" }]
+    },
+    {
+      "name": "My Reports",
+      "short_name": "Track",
+      "description": "Track status of your submitted civic complaints",
+      "url": "/complaints?view=mine",
+      "icons": [{ "src": "/favicon.svg", "sizes": "192x192" }]
+    },
+    {
+      "name": "Civic Map",
+      "short_name": "Map",
+      "description": "Explore city issues map and nearby complaints",
+      "url": "/map",
+      "icons": [{ "src": "/favicon.svg", "sizes": "192x192" }]
+    }
+  ]
+}

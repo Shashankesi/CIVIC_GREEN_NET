@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000/api';
+export const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5000/api';
 
 // Simple token store using localStorage
 const TOKEN_KEY = 'cgn_tokens';
@@ -28,7 +28,31 @@ function unwrapResponse(res) {
   return body;
 }
 
-const instance = axios.create({ baseURL: API_BASE });
+// In-flight request deduplication & short-term cache for GET requests
+const inFlightRequests = new Map();
+const getCache = new Map();
+const CACHE_DEFAULT_TTL = 3000; // 3 seconds for deduplication / snappy tab switching
+
+function generateCacheKey(config) {
+  if (config.method && config.method.toLowerCase() !== 'get') return null;
+  const url = config.url || '';
+  const params = config.params ? JSON.stringify(config.params) : '';
+  return `${url}?${params}`;
+}
+
+export function invalidateApiCache(pattern = null) {
+  if (!pattern) {
+    getCache.clear();
+    return;
+  }
+  for (const key of getCache.keys()) {
+    if (key.includes(pattern)) {
+      getCache.delete(key);
+    }
+  }
+}
+
+const instance = axios.create({ baseURL: API_BASE, timeout: 15000 });
 
 let isRefreshing = false;
 let refreshQueue = [];
@@ -46,11 +70,22 @@ instance.interceptors.request.use((config) => {
 	if (tokens && tokens.accessToken) {
 		config.headers.Authorization = `Bearer ${tokens.accessToken}`;
 	}
+  // Attach correlation ID if available
+  if (!config.headers['X-Request-ID']) {
+    config.headers['X-Request-ID'] = `req_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+  }
 	return config;
 });
 
 instance.interceptors.response.use(
-	(res) => res,
+	(res) => {
+    // Invalidate relevant cache on mutations
+    const method = (res.config?.method || '').toLowerCase();
+    if (['post', 'put', 'patch', 'delete'].includes(method)) {
+      invalidateApiCache();
+    }
+    return res;
+  },
 	async (err) => {
 		const original = err.config;
 		if (!original || original._retry) return Promise.reject(err);
@@ -72,7 +107,11 @@ instance.interceptors.response.use(
 			original._retry = true;
 			try {
 				const r = await axios.post(`${API_BASE}/auth/refresh`, { refreshToken: tokens.refreshToken });
-				const newAccess = r.data.accessToken;
+				const unwrapped = unwrapResponse(r);
+				const newAccess = unwrapped?.accessToken || r.data?.accessToken;
+				if (!newAccess) {
+					throw new Error('Refresh token invalid');
+				}
 				const newTokens = { accessToken: newAccess, refreshToken: tokens.refreshToken };
 				setTokens(newTokens);
 				processQueue(null, newAccess);
@@ -89,6 +128,39 @@ instance.interceptors.response.use(
 		return Promise.reject(err);
 	}
 );
+
+// Wrapped cached get helper
+export async function cachedGet(url, config = {}, ttlMs = CACHE_DEFAULT_TTL) {
+  const fullConfig = { ...config, url, method: 'get' };
+  const key = generateCacheKey(fullConfig);
+  
+  if (key) {
+    const cached = getCache.get(key);
+    if (cached && (Date.now() - cached.timestamp < ttlMs)) {
+      return cached.data;
+    }
+    if (inFlightRequests.has(key)) {
+      return inFlightRequests.get(key);
+    }
+  }
+
+  const promise = instance.get(url, config)
+    .then((res) => {
+      const data = unwrapResponse(res);
+      if (key) {
+        getCache.set(key, { data, timestamp: Date.now() });
+        inFlightRequests.delete(key);
+      }
+      return data;
+    })
+    .catch((err) => {
+      if (key) inFlightRequests.delete(key);
+      throw err;
+    });
+
+  if (key) inFlightRequests.set(key, promise);
+  return promise;
+}
 
 export async function updateProfile(fields) {
 	const config = fields instanceof FormData ? { headers: { 'Content-Type': 'multipart/form-data' } } : {};

@@ -1,24 +1,58 @@
 const db = require('../config/db');
 
 async function findByEmail(email) {
-  const q = 'SELECT id,name,email,password,role,status,is_verified,avatar_url,created_at FROM users WHERE email=$1';
+  const q = `SELECT id, name, email, password, role, status, is_verified, avatar_url, settings, department_id,
+    municipality_id, zone_id, ward_id, jurisdiction, designation, employee_id, approved_at, approved_by, created_at 
+    FROM users WHERE LOWER(TRIM(email)) = LOWER(TRIM($1))`;
   const r = await db.query(q, [email]);
   return r.rows[0];
 }
 
 async function findById(id) {
-  const q = 'SELECT id,name,email,role,status,is_verified,avatar_url,created_at FROM users WHERE id=$1';
+  const q = `SELECT id, name, email, role, status, is_verified, avatar_url, settings, department_id,
+    municipality_id, zone_id, ward_id, jurisdiction, designation, employee_id, approved_at, approved_by, created_at 
+    FROM users WHERE id=$1`;
   const r = await db.query(q, [id]);
   return r.rows[0];
 }
 
-async function createUser({ name, email, password, role = 'citizen', status = 'active', settings = {}, department_id = null }) {
+async function createUser({
+  name,
+  email,
+  password,
+  role = 'citizen',
+  status = 'active',
+  settings = {},
+  department_id = null,
+  municipality_id = null,
+  zone_id = null,
+  ward_id = null,
+  jurisdiction = null,
+  designation = null
+}) {
   const safeRole = role === 'officer' ? 'officer' : 'citizen';
   const safeStatus = safeRole === 'officer' ? 'pending' : 'active';
   const effectiveStatus = status || safeStatus;
-  const q = `INSERT INTO users(name,email,password,role,status,is_verified,settings,department_id,created_at)
-    VALUES($1,$2,$3,$4,$5,false,$6,$7,now()) RETURNING id,name,email,role,status`;
-  const r = await db.query(q, [name, email, password, safeRole, effectiveStatus, JSON.stringify(settings), department_id]);
+  const q = `INSERT INTO users(
+      name, email, password, role, status, is_verified, settings, department_id,
+      municipality_id, zone_id, ward_id, jurisdiction, designation, employee_id, created_at
+    )
+    VALUES($1, $2, $3, $4, $5, false, $6, $7, $8, $9, $10, $11, $12, null, now())
+    RETURNING id, name, email, role, status`;
+  const r = await db.query(q, [
+    name,
+    email,
+    password,
+    safeRole,
+    effectiveStatus,
+    JSON.stringify(settings),
+    department_id,
+    municipality_id,
+    zone_id,
+    ward_id,
+    jurisdiction,
+    designation
+  ]);
   return r.rows[0];
 }
 

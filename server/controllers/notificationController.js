@@ -32,4 +32,9 @@ const remove = asyncHandler(async (req, res) => {
   return success(res, {}, 'Deleted');
 });
 
-module.exports = { list, create, mark, markAll, remove };
+const unreadCount = asyncHandler(async (req, res) => {
+  const count = await notificationService.getUnreadCount(req.user.userId);
+  return success(res, { count });
+});
+
+module.exports = { list, create, unreadCount, mark, markAll, remove };

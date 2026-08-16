@@ -16,14 +16,15 @@
 
 .dark {
   --bg: 7 17 31;
-  --surface: 17 24 39;
-  --surface-muted: 15 23 42;
+  --surface: 17 28 45;
+  --surface-hover: 23 36 56;
+  --surface-muted: 13 25 41;
   --muted: 148 163 184;
-  --primary: 52 211 153;
-  --primary-strong: 16 185 129;
-  --border: 30 41 59;
-  --glass: 17 24 39 / 0.6;
-  --ai: 167 139 250;
+  --primary: 16 185 129;
+  --primary-strong: 5 150 105;
+  --border: 36 52 74;
+  --glass: 11 22 38 / 0.8;
+  --ai: 139 92 246;
 }
 
 html, body, #root {
@@ -40,7 +41,8 @@ body {
 }
 
 .dark body {
-  color: #e2e8f0;
+  background-color: #07111F;
+  color: #f8fafc;
 }
 
 /* ===== Scrollbar ===== */
@@ -81,13 +83,43 @@ body {
 .card {
   background: rgb(var(--surface));
   border: 1px solid rgb(var(--border));
-  border-radius: 0.9rem;
+  border-radius: 1rem;
   box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.06), 0 1px 2px -1px rgba(0, 0, 0, 0.06);
-  transition: box-shadow 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease, transform 0.2s ease, background-color 0.2s ease;
+}
+.dark .card {
+  background-color: #111C2D;
+  border-color: #24344A;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.25);
 }
 .card-hover:hover {
   box-shadow: 0 8px 30px -6px rgba(0, 0, 0, 0.12), 0 2px 6px -2px rgba(0, 0, 0, 0.06);
   border-color: rgba(16, 185, 129, 0.3);
+}
+.dark .card-hover:hover {
+  background-color: #172438;
+  border-color: rgba(16, 185, 129, 0.35);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.4);
+}
+
+/* ===== Dark Form Inputs ===== */
+.dark input:not([type="checkbox"]):not([type="radio"]),
+.dark select,
+.dark textarea {
+  background-color: #0D1929;
+  border-color: #26374D;
+  color: #F8FAFC;
+}
+.dark input:not([type="checkbox"]):not([type="radio"]):focus,
+.dark select:focus,
+.dark textarea:focus {
+  border-color: #10B981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
+}
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #64748B;
 }
 
 /* ===== Focus states ===== */
@@ -422,4 +454,181 @@ a:focus-visible {
 }
 .cgn-progress-sweep {
   animation: cgn-infinite-progress 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}/* ===== ENTERPRISE GOVERNMENT & OFFICER PORTAL STYLES ===== */
+/* Scoped classes for municipal command center and field operations */
+
+/* --- Officer & Admin Sidebar --- */
+.officer-sidebar {
+  background: #064e3b;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
 }
+.dark .officer-sidebar {
+  background: #062319;
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.officer-nav-active {
+  background: rgba(16, 185, 129, 0.18);
+  color: #ffffff;
+  border-left: 3px solid #10b981;
+  font-weight: 600;
+}
+.dark .officer-nav-active {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border-left: 3px solid #34d399;
+}
+
+.officer-nav-item {
+  color: rgba(255, 255, 255, 0.72);
+  transition: all 0.15s ease;
+  border-left: 3px solid transparent;
+}
+.officer-nav-item:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* --- Enterprise Hero Styles --- */
+.officer-hero {
+  background: linear-gradient(135deg, #064e3b 0%, #065f46 60%, #047857 100%);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  box-shadow: 0 4px 20px -2px rgba(6, 78, 59, 0.25);
+}
+.dark .officer-hero {
+  background: linear-gradient(135deg, #062319 0%, #064e3b 60%, #022c22 100%);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.4);
+}
+
+/* --- Enterprise KPI Cards --- */
+.officer-kpi-card {
+  border-radius: 0.875rem;
+  padding: 1.125rem;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  color: #0f172a;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.dark .officer-kpi-card {
+  background: #111C2D;
+  border-color: #24344A;
+  color: #f8fafc;
+}
+.officer-kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.08);
+  border-color: #cbd5e1;
+}
+.dark .officer-kpi-card:hover {
+  box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.35);
+  border-color: #334155;
+}
+
+.officer-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.875rem;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04);
+}
+.dark .officer-card {
+  background: #111C2D;
+  border-color: #24344A;
+  box-shadow: 0 2px 12px -2px rgba(0, 0, 0, 0.25);
+}
+
+.officer-qa-card {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  padding: 0.875rem 1rem;
+  border-radius: 0.75rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  transition: all 0.15s ease;
+}
+.dark .officer-qa-card {
+  background: #0d1929;
+  border-color: #24344a;
+}
+.officer-qa-card:hover {
+  background: #f1f5f9;
+  border-color: #10b981;
+  transform: translateX(2px);
+}
+.dark .officer-qa-card:hover {
+  background: #152438;
+  border-color: #34d399;
+}
+
+/* --- Officer Copilot Button --- */
+.officer-copilot-btn {
+  background: linear-gradient(135deg, #059669 0%, #10b981 50%, #06b6d4 100%);
+  box-shadow: 0 4px 20px rgba(16, 185, 129, 0.3), 0 0 40px rgba(6, 182, 212, 0.1);
+  transition: all 0.25s ease;
+}
+.officer-copilot-btn:hover {
+  box-shadow: 0 8px 30px rgba(16, 185, 129, 0.4), 0 0 60px rgba(6, 182, 212, 0.15);
+  transform: translateY(-2px) scale(1.02);
+}
+
+/* --- Officer SLA Ring --- */
+.officer-sla-ring {
+  filter: drop-shadow(0 2px 6px rgba(16, 185, 129, 0.2));
+}
+
+/* --- Officer Card Base --- */
+.officer-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 1rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+.dark .officer-card {
+  background: #111C2D;
+  border-color: #24344A;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.3);
+}
+.officer-card:hover {
+  box-shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.08);
+}
+.dark .officer-card:hover {
+  box-shadow: 0 8px 28px -4px rgba(0, 0, 0, 0.35);
+}
+
+/* --- Officer Quick Action Cards --- */
+.officer-qa-card {
+  border-radius: 0.875rem;
+  padding: 1rem 1.25rem;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  text-decoration: none;
+}
+.officer-qa-card:hover {
+  transform: translateY(-1px);
+}
+.officer-qa-green { background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.15); }
+.officer-qa-green:hover { background: rgba(16, 185, 129, 0.14); border-color: rgba(16, 185, 129, 0.25); }
+.officer-qa-blue { background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.15); }
+.officer-qa-blue:hover { background: rgba(59, 130, 246, 0.14); border-color: rgba(59, 130, 246, 0.25); }
+.officer-qa-orange { background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.15); }
+.officer-qa-orange:hover { background: rgba(245, 158, 11, 0.14); border-color: rgba(245, 158, 11, 0.25); }
+.officer-qa-purple { background: rgba(139, 92, 246, 0.08); border: 1px solid rgba(139, 92, 246, 0.15); }
+.officer-qa-purple:hover { background: rgba(139, 92, 246, 0.14); border-color: rgba(139, 92, 246, 0.25); }
+
+.dark .officer-qa-green { background: rgba(16, 185, 129, 0.06); border-color: rgba(16, 185, 129, 0.12); }
+.dark .officer-qa-green:hover { background: rgba(16, 185, 129, 0.12); border-color: rgba(16, 185, 129, 0.2); }
+.dark .officer-qa-blue { background: rgba(59, 130, 246, 0.06); border-color: rgba(59, 130, 246, 0.12); }
+.dark .officer-qa-blue:hover { background: rgba(59, 130, 246, 0.12); border-color: rgba(59, 130, 246, 0.2); }
+.dark .officer-qa-orange { background: rgba(245, 158, 11, 0.06); border-color: rgba(245, 158, 11, 0.12); }
+.dark .officer-qa-orange:hover { background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.2); }
+.dark .officer-qa-purple { background: rgba(139, 92, 246, 0.06); border-color: rgba(139, 92, 246, 0.12); }
+.dark .officer-qa-purple:hover { background: rgba(139, 92, 246, 0.12); border-color: rgba(139, 92, 246, 0.2); }
+

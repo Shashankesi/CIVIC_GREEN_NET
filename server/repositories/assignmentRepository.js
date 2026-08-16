@@ -1,16 +1,16 @@
 const db = require('../config/db');
 
 async function assignComplaint({ complaintId, officerId, assignedBy }) {
-  await db.query('UPDATE complaints SET officer_id=$1, assigned_at=now() WHERE id=$2', [officerId, complaintId]);
+  await db.query("UPDATE complaints SET officer_id=$1, assigned_at=now(), status='assigned' WHERE id=$2", [officerId, complaintId]);
   // Insert assignment history (preserve history)
-  const q = 'INSERT INTO complaint_assignments(complaint_id, officer_id, assigned_by, assigned_at) VALUES($1,$2,$3,now()) RETURNING *';
+  const q = "INSERT INTO complaint_assignments(complaint_id, officer_id, assigned_by, assigned_at, status) VALUES($1,$2,$3,now(),'ASSIGNED') RETURNING *";
   const r = await db.query(q, [complaintId, officerId, assignedBy]);
   return r.rows[0];
 }
 
 async function unassignComplaint(complaintId, assignedBy) {
-  await db.query('UPDATE complaints SET officer_id=NULL, assigned_at=NULL WHERE id=$1', [complaintId]);
-  await db.query('INSERT INTO complaint_assignments(complaint_id, officer_id, assigned_by, assigned_at) VALUES($1,NULL,$2,now())', [complaintId, assignedBy]);
+  await db.query("UPDATE complaints SET officer_id=NULL, assigned_at=NULL, status='open' WHERE id=$1", [complaintId]);
+  await db.query("INSERT INTO complaint_assignments(complaint_id, officer_id, assigned_by, assigned_at, status) VALUES($1,NULL,$2,now(),'DECLINED')", [complaintId, assignedBy]);
   return { complaint_id: complaintId, officer_id: null };
 }
 

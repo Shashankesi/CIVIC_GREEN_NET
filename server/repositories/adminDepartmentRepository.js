@@ -74,7 +74,7 @@ async function deleteDepartment(id) {
 }
 
 async function listOfficers() {
-  const q = "SELECT id, name, email, department_id FROM users WHERE role='officer' ORDER BY name ASC";
+  const q = "SELECT id, name, email, department_id, employee_id, status FROM users WHERE role='officer' AND status IN ('active', 'approved') ORDER BY name ASC";
   const r = await db.query(q);
   return r.rows;
 }

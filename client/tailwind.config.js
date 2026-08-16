@@ -39,7 +39,10 @@ module.exports = {
         card: '0 1px 3px 0 rgba(0,0,0,0.06), 0 1px 2px -1px rgba(0,0,0,0.06)',
         'card-hover': '0 8px 30px -6px rgba(0,0,0,0.12), 0 2px 6px -2px rgba(0,0,0,0.06)',
         glow: '0 0 0 1px rgba(16,185,129,0.15), 0 4px 20px -2px rgba(16,185,129,0.2)',
-        'glow-ai': '0 0 0 1px rgba(124,58,237,0.15), 0 4px 20px -2px rgba(124,58,237,0.2)'
+        'glow-ai': '0 0 0 1px rgba(124,58,237,0.15), 0 4px 20px -2px rgba(124,58,237,0.2)',
+        'officer-card': '0 4px 24px -4px rgba(16,185,129,0.12), 0 1px 4px -1px rgba(0,0,0,0.06)',
+        'officer-card-hover': '0 12px 36px -8px rgba(16,185,129,0.18), 0 4px 12px -2px rgba(0,0,0,0.08)',
+        'officer-glow': '0 0 20px rgba(16,185,129,0.15), 0 0 60px rgba(16,185,129,0.05)'
       },
       borderRadius: {
         xl: '0.9rem',
@@ -53,11 +56,26 @@ module.exports = {
         'fade-up': {
           '0%': { opacity: 0, transform: 'translateY(12px)' },
           '100%': { opacity: 1, transform: 'translateY(0)' }
+        },
+        'officer-float': {
+          '0%, 100%': { transform: 'translateY(0)' },
+          '50%': { transform: 'translateY(-3px)' }
+        },
+        'officer-glow-pulse': {
+          '0%, 100%': { boxShadow: '0 0 12px rgba(16,185,129,0.2)' },
+          '50%': { boxShadow: '0 0 24px rgba(16,185,129,0.4)' }
+        },
+        'officer-status-pulse': {
+          '0%, 100%': { opacity: 1 },
+          '50%': { opacity: 0.5 }
         }
       },
       animation: {
         shimmer: 'shimmer 2s linear infinite',
-        'fade-up': 'fade-up 0.5s ease-out'
+        'fade-up': 'fade-up 0.5s ease-out',
+        'officer-float': 'officer-float 3s ease-in-out infinite',
+        'officer-glow-pulse': 'officer-glow-pulse 2.5s ease-in-out infinite',
+        'officer-status-pulse': 'officer-status-pulse 2s ease-in-out infinite'
       }
     }
   },

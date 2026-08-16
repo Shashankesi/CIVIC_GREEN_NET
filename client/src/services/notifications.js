@@ -8,6 +8,11 @@ async function list(page = 1) {
   return unwrap(res);
 }
 
+async function getUnreadCount() {
+  const res = await api.get('/notifications/unread-count');
+  return unwrap(res);
+}
+
 async function markRead(id) {
   const res = await api.post(`/notifications/${id}/read`);
   return unwrap(res);
@@ -18,4 +23,9 @@ async function markAll() {
   return unwrap(res);
 }
 
-export default { list, markRead, markAll, unwrap };
+async function deleteNotification(id) {
+  const res = await api.delete(`/notifications/${id}`);
+  return unwrap(res);
+}
+
+export default { list, getUnreadCount, markRead, markAll, deleteNotification, unwrap };

@@ -75,4 +75,63 @@ async function getPublicStats() {
   return unwrap(res);
 }
 
-export default { createComplaint, listComplaints, getComplaint, getTimeline, changeStatus, searchComplaints, getSimilar, heatmap, bboxQuery, nearby, getPublicStats, unwrap };
+async function toggleVote(id) {
+  const res = await api.post(`/complaints/${id}/vote`)
+  return unwrap(res)
+}
+
+async function toggleFollow(id) {
+  const res = await api.post(`/complaints/${id}/follow`)
+  return unwrap(res)
+}
+
+async function getComments(id) {
+  const res = await api.get(`/complaints/${id}/comments`)
+  return unwrap(res)
+}
+
+async function addComment(id, comment, isAnonymous = false) {
+  const res = await api.post(`/complaints/${id}/comments`, { comment, isAnonymous })
+  return unwrap(res)
+}
+
+async function addEvidence(id, formData) {
+  const res = await api.post(`/complaints/${id}/evidence`, formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+  return unwrap(res)
+}
+
+async function verifyResolution(id, satisfied, options = {}) {
+  const payload = typeof options === 'string' 
+    ? { satisfied, note: options } 
+    : { satisfied, note: options?.note || '', reason: options?.reason || '' }
+  const res = await api.post(`/complaints/${id}/verify-resolution`, payload)
+  return unwrap(res)
+}
+
+async function reportComment(commentId, reason) {
+  const res = await api.post(`/complaints/comments/${commentId}/report`, { reason })
+  return unwrap(res)
+}
+
+export default {
+  createComplaint,
+  listComplaints,
+  getComplaint,
+  getTimeline,
+  changeStatus,
+  searchComplaints,
+  getSimilar,
+  heatmap,
+  bboxQuery,
+  nearby,
+  getPublicStats,
+  toggleVote,
+  toggleFollow,
+  getComments,
+  addComment,
+  reportComment,
+  addEvidence,
+  verifyResolution,
+  unwrap
+};
+

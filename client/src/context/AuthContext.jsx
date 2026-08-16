@@ -1,4 +1,4 @@
-import React, { createContext, useEffect, useState } from 'react'
+import React, { createContext, useEffect, useState, useCallback } from 'react'
 import api, { getTokens, setTokens, clearTokens, unwrapResponse } from '../services/api'
 
 const AuthContext = createContext();
@@ -6,6 +6,22 @@ const AuthContext = createContext();
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  const fetchProfile = useCallback(async () => {
+    try {
+      const response = await api.get('/auth/me')
+      const profile = unwrapResponse(response)
+      if (profile && profile.newTokens) {
+        setTokens(profile.newTokens)
+      }
+      setUser(profile || null)
+      return profile
+    } catch (e) {
+      clearTokens()
+      setUser(null)
+      throw e
+    }
+  }, [])
 
   useEffect(() => {
     const tokens = getTokens();
@@ -17,16 +33,8 @@ export function AuthProvider({ children }) {
     }
 
     setLoading(true);
-    api
-      .get('/auth/me')
-      .then((response) => {
-        const profile = unwrapResponse(response);
-        setUser(profile || null);
-      })
-      .catch(() => {
-        clearTokens();
-        setUser(null);
-      })
+    fetchProfile()
+      .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
@@ -41,7 +49,9 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, setUser, loading, loginWithTokens, logout }}>{children}</AuthContext.Provider>
+    <AuthContext.Provider value={{ user, setUser, loading, loginWithTokens, logout, refreshUser: fetchProfile }}>
+      {children}
+    </AuthContext.Provider>
   );
 }
 

@@ -27,4 +27,10 @@ async function deleteNotification(id) {
   await db.query(q, [id]);
 }
 
-module.exports = { createNotification, listNotifications, markRead, markAllRead, deleteNotification };
+async function getUnreadCount(userId) {
+  const q = 'SELECT COUNT(*)::int AS count FROM notifications WHERE user_id=$1 AND is_read=false';
+  const r = await db.query(q, [userId]);
+  return r.rows[0]?.count || 0;
+}
+
+module.exports = { createNotification, listNotifications, getUnreadCount, markRead, markAllRead, deleteNotification };

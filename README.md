@@ -38,7 +38,7 @@ Copy-Item client/.env.example client/.env
 Copy-Item server/.env.example server/.env
 ```
 
-Open both `.env` files and add your local configuration details (database credentials, SMTP credentials, Cloudinary, and AI API keys).
+Open both `.env` files and add your local configuration details (database credentials, Resend Email API key, Cloudinary, and AI API keys).
 
 ### 3. Backend Setup
 

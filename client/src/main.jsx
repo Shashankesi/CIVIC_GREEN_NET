@@ -6,18 +6,33 @@ import './styles/index.css'
 import 'leaflet/dist/leaflet.css'
 import { ThemeProvider } from './context/ThemeContext'
 import { AuthProvider } from './context/AuthContext'
+import { RealtimeProvider } from './context/RealtimeContext'
+import { LanguageProvider } from './utils/i18n'
 import ErrorBoundary from './components/ErrorBoundary'
+
+// Register Service Worker for PWA if supported
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((err) => {
+      console.warn('Service worker registration failed:', err)
+    })
+  })
+}
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <ErrorBoundary>
-      <ThemeProvider>
-        <AuthProvider>
-          <BrowserRouter>
-            <App />
-          </BrowserRouter>
-        </AuthProvider>
-      </ThemeProvider>
+      <LanguageProvider>
+        <ThemeProvider>
+          <AuthProvider>
+            <RealtimeProvider>
+              <BrowserRouter>
+                <App />
+              </BrowserRouter>
+            </RealtimeProvider>
+          </AuthProvider>
+        </ThemeProvider>
+      </LanguageProvider>
     </ErrorBoundary>
   </React.StrictMode>
 )

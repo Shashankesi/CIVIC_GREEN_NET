@@ -1,0 +1,24 @@
+<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="cgn-fav-bg" x1="4" y1="4" x2="44" y2="44" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stopColor="#10B981" />
+      <stop offset="45%" stopColor="#059669" />
+      <stop offset="100%" stopColor="#0F766E" />
+    </linearGradient>
+    <linearGradient id="cgn-fav-leaf" x1="12" y1="10" x2="36" y2="38" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stopColor="#6EE7B7" />
+      <stop offset="60%" stopColor="#10B981" />
+      <stop offset="100%" stopColor="#047857" />
+    </linearGradient>
+  </defs>
+  <path d="M24 4L40 10.5V23.5C40 33.2 33.2 41.8 24 44C14.8 41.8 8 33.2 8 23.5V10.5L24 4Z" fill="url(#cgn-fav-bg)"/>
+  <path d="M16 28L24 21L32 28M24 21V12M15 17L24 21L33 17" stroke="#A7F3D0" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="0.85"/>
+  <path d="M24 12C24 12 34 18 34 27C34 32.52 29.52 37 24 37C18.48 37 14 32.52 14 27C14 18 24 12 24 12Z" fill="url(#cgn-fav-leaf)" fill-opacity="0.95"/>
+  <path d="M24 14V34M24 22L29 19M24 26L19 23M24 28L28 26" stroke="#FFFFFF" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="24" cy="12" r="2.2" fill="#34D399" stroke="#FFFFFF" stroke-width="1"/>
+  <circle cx="15" cy="17" r="1.8" fill="#38BDF8" stroke="#FFFFFF" stroke-width="0.8"/>
+  <circle cx="33" cy="17" r="1.8" fill="#38BDF8" stroke="#FFFFFF" stroke-width="0.8"/>
+  <circle cx="16" cy="28" r="1.8" fill="#34D399" stroke="#FFFFFF" stroke-width="0.8"/>
+  <circle cx="32" cy="28" r="1.8" fill="#34D399" stroke="#FFFFFF" stroke-width="0.8"/>
+  <circle cx="24" cy="37" r="2" fill="#FFFFFF" stroke="#059669" stroke-width="1"/>
+</svg>

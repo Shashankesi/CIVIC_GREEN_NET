@@ -1,8 +1,34 @@
 const db = require('../config/db');
 const userRepo = require('../repositories/userRepository');
 
-async function createUser({ name, email, password, role = 'citizen', status = 'active', settings = {}, department_id = null }) {
-  return userRepo.createUser({ name, email, password, role, status, settings, department_id });
+async function createUser({
+  name,
+  email,
+  password,
+  role = 'citizen',
+  status = 'active',
+  settings = {},
+  department_id = null,
+  municipality_id = null,
+  zone_id = null,
+  ward_id = null,
+  jurisdiction = null,
+  designation = null
+}) {
+  return userRepo.createUser({
+    name,
+    email,
+    password,
+    role,
+    status,
+    settings,
+    department_id,
+    municipality_id,
+    zone_id,
+    ward_id,
+    jurisdiction,
+    designation
+  });
 }
 
 async function findByEmail(email) {

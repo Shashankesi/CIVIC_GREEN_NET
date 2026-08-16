@@ -1,27 +1,33 @@
 import React, {
   useEffect, useState, useRef, useCallback, useContext, useMemo
 } from 'react'
-import { MapContainer, TileLayer, Marker, useMap, Circle, Popup, useMapEvents } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, useMap, Circle, Popup, GeoJSON, useMapEvents } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet.markercluster/dist/MarkerCluster.css'
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css'
 import 'leaflet.markercluster/dist/leaflet.markercluster.js'
 import 'leaflet.heat'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   LocateFixed, Thermometer, X, Search, Loader2, Navigation2,
   AlertCircle, RefreshCw, SlidersHorizontal, MapPin, ChevronDown,
-  ArrowRight, Target, Radio
+  ArrowRight, Target, Radio, Layers, Flame, Clock, Sparkles,
+  Repeat, ShieldCheck, Building2, User, ExternalLink, CheckCircle2,
+  AlertTriangle, Filter
 } from 'lucide-react'
+import mapsApi from '../services/maps'
 import complaintsApi from '../services/complaints'
 import maptiler from '../services/maptiler'
+import { API_BASE, getTokens } from '../services/api'
 import {
   getTileConfig, STATUS_META, PRIORITY_META, CATEGORY_OPTIONS,
-  STATUS_OPTIONS, PRIORITY_OPTIONS, RADIUS_OPTIONS,
+  STATUS_OPTIONS, PRIORITY_OPTIONS, RADIUS_OPTIONS, TIME_OPTIONS,
+  GIS_LAYERS, SLA_RISK_META, HOTSPOT_LEVEL_META,
   DEFAULT_CENTER, DEFAULT_ZOOM, ATTRIBUTION
 } from '../config/mapConfig'
 import ThemeContext from '../context/ThemeContext'
+import AuthContext from '../context/AuthContext'
 
 // ─── Utilities ───────────────────────────────────────────────────────────────
 
@@ -53,13 +59,16 @@ function formatDist(m) {
 function createMarkerIcon(complaint) {
   const sm = getStatusMeta(complaint.status)
   const pm = getPriorityMeta(complaint.priority)
+  const isOverdue = complaint.slaStatus === 'overdue' || complaint.sla_status === 'overdue'
   const size = pm.ring ? 28 + pm.ring : 24
+  
   const html = `
-    <div class="cgn-pin" style="width:${size}px;height:${size}px;">
+    <div class="cgn-pin ${isOverdue ? 'cgn-pin-overdue' : ''}" style="width:${size}px;height:${size}px;">
       <div class="cgn-pin-inner" style="background:${sm.color};">
         <span class="cgn-pin-icon">${sm.icon}</span>
       </div>
       ${pm.ring ? `<div class="cgn-pin-ring" style="border:2.5px solid ${pm.color};"></div>` : ''}
+      ${isOverdue ? `<div class="cgn-overdue-halo"></div>` : ''}
     </div>
   `
   return L.divIcon({
@@ -71,35 +80,52 @@ function createMarkerIcon(complaint) {
   })
 }
 
-// ─── Popup HTML ───────────────────────────────────────────────────────────────
+// ─── Sla Risk Pin Factory ────────────────────────────────────────────────────
+function createSlaRiskIcon(tier) {
+  const meta = SLA_RISK_META[tier] || SLA_RISK_META.on_time
+  const html = `
+    <div class="cgn-sla-pin" style="background:${meta.color}; width:24px; height:24px; border-radius:50%; border:2px solid white; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 6px rgba(0,0,0,0.3);">
+      <span style="font-size:10px; color:white; font-weight:bold;">${tier === 'overdue' ? '!' : tier === 'due_soon' ? '⏱' : '✓'}</span>
+    </div>
+  `
+  return L.divIcon({
+    className: 'cgn-sla-marker',
+    html,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12]
+  })
+}
+
+// ─── Popup HTML for Leaflet ──────────────────────────────────────────────────
 
 function makePopupHtml(m, userLat, userLng) {
   const sm = getStatusMeta(m.status)
   const pm = getPriorityMeta(m.priority)
-  const imgUrl = m.image_url || (m.images && m.images[0] && m.images[0].url)
-  const date = m.created_at ? new Date(m.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : ''
-  const address = m.address || m.formattedAddress || ''
+  const imgUrl = m.image_url || m.imageUrl || (m.images && m.images[0] && m.images[0].url)
+  const date = m.created_at || m.createdAt ? new Date(m.created_at || m.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : ''
+  const address = m.address || m.formattedAddress || 'Municipal Area'
+  const isOverdue = m.slaStatus === 'overdue' || m.sla_status === 'overdue'
 
-  // Distance from user location (when available)
   let distStr = ''
   if (userLat != null && userLng != null && m.lat != null && m.lng != null) {
     const km = haversineKm(userLat, userLng, m.lat, m.lng)
     distStr = km < 1 ? `${Math.round(km * 1000)} m away` : `${km.toFixed(1)} km away`
-  } else if (m.distance != null) {
-    distStr = formatDist(m.distance)
+  } else if (m.distanceFormatted) {
+    distStr = m.distanceFormatted
   }
 
   return `
     <div class="cgn-popup">
       ${imgUrl ? `<img class="cgn-pop-img" src="${imgUrl}" alt="" />` : ''}
       <div class="cgn-pop-head">
-        <span class="cgn-pop-id">#${m.id}</span>
+        <span class="cgn-pop-id">#${m.id || m.ticketId}</span>
         <span class="cgn-pop-dot" style="background:${sm.color}"></span>
         <span class="cgn-pop-status">${sm.label}</span>
         ${pm.ring ? `<span class="cgn-pop-pri" style="color:${pm.color}">● ${pm.label}</span>` : ''}
       </div>
       <div class="cgn-pop-title">${m.title || m.summary || 'Complaint #' + m.id}</div>
       ${m.category ? `<div class="cgn-pop-meta">🏷 ${m.category}</div>` : ''}
+      ${isOverdue ? `<div class="cgn-pop-meta" style="color:#ef4444; font-weight:bold;">⏱ SLA Overdue</div>` : ''}
       ${distStr ? `<div class="cgn-pop-meta">📍 ${distStr}</div>` : ''}
       ${address ? `<div class="cgn-pop-meta" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${address}</div>` : ''}
       ${date ? `<div class="cgn-pop-meta">📅 ${date}</div>` : ''}
@@ -111,9 +137,9 @@ function makePopupHtml(m, userLat, userLng) {
   `
 }
 
-// ─── Leaflet imperative children ─────────────────────────────────────────────
+// ─── Leaflet Imperative Sub-Layers ──────────────────────────────────────────
 
-function MarkerClusterLayer({ markers, userLat, userLng }) {
+function MarkerClusterLayer({ markers, userLat, userLng, onSelectComplaint }) {
   const map = useMap()
   const groupRef = useRef(null)
   const supported = typeof L.markerClusterGroup === 'function'
@@ -153,9 +179,12 @@ function MarkerClusterLayer({ markers, userLat, userLng }) {
       if (lat == null || lng == null) return
       const marker = L.marker([lat, lng], { icon: createMarkerIcon(m) })
       marker.bindPopup(makePopupHtml(m, userLat, userLng), { maxWidth: 260, className: 'cgn-leaflet-popup' })
+      if (onSelectComplaint) {
+        marker.on('click', () => onSelectComplaint(m))
+      }
       grp.addLayer(marker)
     })
-  }, [markers, userLat, userLng, supported])
+  }, [markers, userLat, userLng, supported, onSelectComplaint])
 
   return null
 }
@@ -163,708 +192,607 @@ function MarkerClusterLayer({ markers, userLat, userLng }) {
 function HeatLayer({ points }) {
   const map = useMap()
   const layerRef = useRef(null)
-  const heatPoints = useMemo(
-    () => (points || []).filter(p => p.lat != null && p.lng != null).map(p => [p.lat, p.lng, p.count || 1]),
-    [points]
-  )
+  
+  const heatPoints = useMemo(() => {
+    if (!points) return []
+    return points.map(p => {
+      if (Array.isArray(p)) return p
+      return [p.lat, p.lng, p.count || p.weight || 0.6]
+    }).filter(p => p[0] != null && p[1] != null)
+  }, [points])
+
   useEffect(() => {
-    if (!map) return
+    if (!map || typeof L.heatLayer !== 'function') return
     if (layerRef.current) { map.removeLayer(layerRef.current); layerRef.current = null }
     if (heatPoints.length) {
       layerRef.current = L.heatLayer(heatPoints, {
-        radius: 22, blur: 18, maxZoom: 16, minOpacity: 0.25,
+        radius: 24, blur: 18, maxZoom: 16, minOpacity: 0.25,
         gradient: { 0.2: '#22d3ee', 0.45: '#10b981', 0.65: '#f59e0b', 0.85: '#f97316', 1: '#ef4444' }
       })
       map.addLayer(layerRef.current)
     }
     return () => { if (layerRef.current) { map.removeLayer(layerRef.current); layerRef.current = null } }
   }, [map, heatPoints])
+
   return null
 }
 
-function BboxTracker({ onBbox }) {
+function MapPanController({ targetCenter, targetZoom }) {
+  const map = useMap()
+  useEffect(() => {
+    if (targetCenter && targetCenter[0] && targetCenter[1]) {
+      map.flyTo(targetCenter, targetZoom || map.getZoom(), { duration: 1.2 })
+    }
+  }, [map, targetCenter, targetZoom])
+  return null
+}
+
+function BboxTracker({ onBbox, onZoomChange }) {
   const map = useMap()
   const timerRef = useRef(null)
   const lastRef = useRef('')
 
-  function emit() {
-    const b = map.getBounds()
-    const key = [b.getWest().toFixed(3), b.getSouth().toFixed(3), b.getEast().toFixed(3), b.getNorth().toFixed(3)].join(',')
-    if (key === lastRef.current) return
-    lastRef.current = key
-    if (timerRef.current) clearTimeout(timerRef.current)
-    timerRef.current = setTimeout(() => onBbox([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]), 400)
-  }
+  const emit = useCallback(() => {
+    try {
+      const b = map.getBounds()
+      const z = map.getZoom()
+      if (!b || !b.isValid()) return
+      if (onZoomChange) onZoomChange(z)
+      const key = [b.getWest().toFixed(3), b.getSouth().toFixed(3), b.getEast().toFixed(3), b.getNorth().toFixed(3)].join(',')
+      if (key === lastRef.current) return
+      lastRef.current = key
+      if (timerRef.current) clearTimeout(timerRef.current)
+      timerRef.current = setTimeout(() => onBbox([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()], z), 150)
+    } catch (e) {}
+  }, [map, onBbox, onZoomChange])
 
   useMapEvents({ moveend: emit, zoomend: emit })
-  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current) }, [])
-  return null
-}
 
-function MapRefSetter({ mapRef }) {
-  const map = useMap()
   useEffect(() => {
-    mapRef.current = map
-    // Invalidate size once mounted to fix 0px height bug
-    requestAnimationFrame(() => map.invalidateSize({ pan: false, animate: false }))
-    setTimeout(() => map.invalidateSize({ pan: false, animate: false }), 300)
-  }, [map, mapRef])
+    emit()
+    return () => { if (timerRef.current) clearTimeout(timerRef.current) }
+  }, [emit])
+
   return null
 }
 
-function FlyToLocation({ target }) {
-  const map = useMap()
-  useEffect(() => {
-    if (target && target.lat != null && target.lng != null) {
-      map.flyTo([target.lat, target.lng], Math.max(15, map.getZoom()), { animate: true, duration: 1.2 })
-    }
-  }, [target, map])
-  return null
-}
-
-// ─── Nearby complaint list panel ──────────────────────────────────────────────
-
-function NearbyPanel({ complaints, userLat, userLng, loading, onSelect, radiusMeters }) {
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full text-slate-400 gap-2 py-8">
-        <Loader2 className="h-5 w-5 animate-spin" />
-        <span className="text-xs">Loading nearby reports…</span>
-      </div>
-    )
-  }
-  if (!userLat) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full text-slate-400 gap-2 py-8 px-4 text-center">
-        <MapPin className="h-8 w-8 opacity-40" />
-        <span className="text-xs font-medium">Enable location to see nearby reports</span>
-        <span className="text-xs opacity-60">Click "My Location" to get started</span>
-      </div>
-    )
-  }
-  if (!complaints.length) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full text-slate-400 gap-2 py-8 px-4 text-center">
-        <Target className="h-8 w-8 opacity-40" />
-        <span className="text-xs font-medium">No civic complaints reported nearby</span>
-        <span className="text-xs opacity-60">Within {(radiusMeters / 1000).toFixed(0)} km of your location</span>
-      </div>
-    )
-  }
-  return (
-    <div className="divide-y divide-slate-100 dark:divide-slate-800 overflow-y-auto">
-      {complaints.map((c) => {
-        const sm = getStatusMeta(c.status)
-        const pm = getPriorityMeta(c.priority)
-        const dist = c.distance != null ? formatDist(c.distance) :
-          (userLat != null && c.lat != null
-            ? formatDist(haversineKm(userLat, userLng, c.lat, c.lng) * 1000)
-            : null)
-        return (
-          <button
-            key={c.id}
-            onClick={() => onSelect(c)}
-            className="w-full text-left px-3 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors group"
-          >
-            <div className="flex items-start justify-between gap-2">
-              <div className="flex-1 min-w-0">
-                <div className="text-xs font-semibold text-slate-800 dark:text-slate-100 truncate group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
-                  {c.title || `Complaint #${c.id}`}
-                </div>
-                <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                  {c.category && (
-                    <span className="text-[10px] text-slate-400 capitalize">{c.category}</span>
-                  )}
-                  {pm.label && pm.ring > 0 && (
-                    <span className="text-[10px] font-semibold" style={{ color: pm.color }}>● {pm.label}</span>
-                  )}
-                  {dist && (
-                    <span className="text-[10px] text-slate-400">{dist}</span>
-                  )}
-                </div>
-              </div>
-              <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold text-white" style={{ background: sm.color }}>
-                {sm.label}
-              </span>
-            </div>
-          </button>
-        )
-      })}
-    </div>
-  )
-}
-
-// ─── Main MapView ─────────────────────────────────────────────────────────────
+// ─── Main MapView Component ──────────────────────────────────────────────────
 
 export default function MapView({
-  center = DEFAULT_CENTER,
-  zoom = DEFAULT_ZOOM,
-  filters,
-  height = 500,
-  onLoaded,
-  showLegend = true,
-  showControls = true,
-  showSidebar = false,  // sidebar with nearby panel
-  clustered = true,
-  showHeatmap = false,
-  preview = false,
-  onLocationSelect,
-  initialRadius = 5000
+  height = 560,
+  initialCenter = [30.7333, 76.7794], // Chandigarh Default
+  initialZoom = 12,
+  filters = {},
+  userRole = 'citizen',
+  showAdminDrawer = true,
+  onComplaintClick = null,
+  onStatsChange = null
 }) {
-  const { dark } = useContext(ThemeContext)
-  const [markers, setMarkers] = useState([])
-  const [nearbyComplaints, setNearbyComplaints] = useState([])
-  const [heatPoints, setHeatPoints] = useState([])
-  const [loading, setLoading] = useState(false)
-  const [nearbyLoading, setNearbyLoading] = useState(false)
-  const [error, setError] = useState(null)
-  const [tileError, setTileError] = useState(false)
-  const [userLocation, setUserLocation] = useState(null)   // [lat, lng]
-  const [accuracy, setAccuracy] = useState(null)
-  const [locStatus, setLocStatus] = useState('idle')       // idle|locating|done|denied|error
-  const [locAddress, setLocAddress] = useState('')
+  const { theme } = useContext(ThemeContext)
+  const { user } = useContext(AuthContext)
+  const isDark = theme === 'dark'
+  const role = user?.role || userRole || 'citizen'
+  const isAdminOrOfficer = role === 'admin' || role === 'officer'
+
+  // Map and layer states
+  const [activeLayers, setActiveLayers] = useState({
+    complaints: true,
+    heatmap: false,
+    hotspots: true,
+    slaRisk: false,
+    duplicateClusters: false,
+    recurringZones: false,
+    wards: true,
+    departments: false
+  })
+
+  const [currentZoom, setCurrentZoom] = useState(initialZoom)
   const [bbox, setBbox] = useState(null)
-  const [heatOn, setHeatOn] = useState(showHeatmap)
-  const [viewMode, setViewMode] = useState('markers')      // markers|heatmap
-  const [searchTerm, setSearchTerm] = useState('')
-  const [searchResults, setSearchResults] = useState([])
-  const [searchStatus, setSearchStatus] = useState('idle') // idle|loading|done|empty|error
-  const [searchOpen, setSearchOpen] = useState(false)
-  const [selectedLocation, setSelectedLocation] = useState(null)
-  const [flyTarget, setFlyTarget] = useState(null)
-  const [radius, setRadius] = useState(initialRadius)
-  const [activeFilters, setActiveFilters] = useState(filters || {})
-  const [filtersOpen, setFiltersOpen] = useState(false)
-  const mapRef = useRef(null)
-  const searchAbortRef = useRef(null)
-  const bboxAbortRef = useRef(null)
-  const loadingRef = useRef(false)
+  const [complaints, setComplaints] = useState([])
+  const [heatmapPoints, setHeatmapPoints] = useState([])
+  const [hotspots, setHotspots] = useState([])
+  const [slaRiskData, setSlaRiskData] = useState({ overdue: [], dueSoon: [], onTime: [], summary: {} })
+  const [duplicateClusters, setDuplicateClusters] = useState([])
+  const [recurringZones, setRecurringZones] = useState([])
+  const [wards, setWards] = useState([])
+  const [departments, setDepartments] = useState([])
+  const [loading, setLoading] = useState(false)
 
-  // Sync external filters prop
+  // Drawer / Selection
+  const [selectedComplaint, setSelectedComplaint] = useState(null)
+  const [selectedHotspot, setSelectedHotspot] = useState(null)
+  const [selectedWard, setSelectedWard] = useState(null)
+  const [panTarget, setPanTarget] = useState(null)
+
+  // Search & Geolocation
+  const [searchQuery, setSearchQuery] = useState('')
+  const [userLocation, setUserLocation] = useState(null)
+  const [locating, setLocating] = useState(false)
+  const [layerMenuOpen, setLayerMenuOpen] = useState(false)
+
+  // 1. Fetch Wards & Static Layers on Mount
   useEffect(() => {
-    setActiveFilters(filters || {})
-  }, [filters])
-
-  // Tile config
-  const tileConfig = useMemo(() => getTileConfig(dark), [dark])
-
-  // Invalidate map on resize/prop changes
-  const invalidate = useCallback(() => {
-    if (!mapRef.current) return
-    requestAnimationFrame(() => mapRef.current?.invalidateSize({ pan: false, animate: false }))
+    let unmounted = false
+    async function loadStaticLayers() {
+      try {
+        const [wRes, dRes] = await Promise.all([
+          mapsApi.getWards(),
+          mapsApi.getDepartments()
+        ])
+        if (!unmounted) {
+          setWards(wRes)
+          setDepartments(dRes)
+        }
+      } catch (err) {
+        console.warn('Failed to load static GIS layers:', err)
+      }
+    }
+    loadStaticLayers()
+    return () => { unmounted = true }
   }, [])
 
-  useEffect(() => {
-    invalidate()
-    const t = setTimeout(invalidate, 300)
-    return () => clearTimeout(t)
-  }, [height, dark, preview, showControls, showSidebar, invalidate])
-
-  useEffect(() => {
-    if (!mapRef.current || typeof ResizeObserver === 'undefined') return
-    const container = mapRef.current.getContainer?.()
-    if (!container) return
-    const obs = new ResizeObserver(invalidate)
-    obs.observe(container)
-    return () => obs.disconnect()
-  }, [invalidate])
-
-  // Load markers for current bbox
-  const loadBboxMarkers = useCallback(async (b) => {
-    if (!b || loadingRef.current) return
-    loadingRef.current = true
+  // 2. Fetch Bounding-Box Dynamic Data
+  const loadMapData = useCallback(async (currentBbox, zoomLevel) => {
+    if (!currentBbox || currentBbox.length < 4) return
     setLoading(true)
-    setError(null)
-    if (bboxAbortRef.current) bboxAbortRef.current.abort()
-    const ctrl = new AbortController()
-    bboxAbortRef.current = ctrl
     try {
-      const params = {
-        minLng: b[0], minLat: b[1], maxLng: b[2], maxLat: b[3],
-        limit: 500, offset: 0,
-        ...activeFilters
+      const [minLng, minLat, maxLng, maxLat] = currentBbox
+      const queryParams = {
+        minLng, minLat, maxLng, maxLat,
+        zoom: zoomLevel,
+        ...filters
       }
-      const items = await complaintsApi.bboxQuery(params)
-      if (ctrl.signal.aborted) return
-      setMarkers(Array.isArray(items) ? items : [])
-      if (onLoaded) onLoaded(Array.isArray(items) ? items.length : 0)
-    } catch (e) {
-      if (!e?.name?.includes('Abort')) setError('Unable to load civic reports.')
+
+      // Parallel fetch based on active layers
+      const promises = []
+
+      // Layer 1: Complaints
+      if (activeLayers.complaints) {
+        promises.push(mapsApi.getComplaintsInBbox(queryParams).then(res => setComplaints(res)))
+      }
+
+      // Layer 2: Heatmap
+      if (activeLayers.heatmap) {
+        promises.push(mapsApi.getHeatmap(queryParams).then(res => setHeatmapPoints(res)))
+      }
+
+      // Layer 3: Hotspots
+      if (activeLayers.hotspots) {
+        promises.push(mapsApi.getHotspots({ days: filters.timeframe === '7d' ? 7 : 30 }).then(res => setHotspots(res)))
+      }
+
+      // Layer 4: SLA Risk
+      if (activeLayers.slaRisk) {
+        promises.push(mapsApi.getSlaRisk(queryParams).then(res => setSlaRiskData(res)))
+      }
+
+      // Layer 5: Duplicate Clusters
+      if (activeLayers.duplicateClusters) {
+        promises.push(mapsApi.getDuplicateClusters().then(res => setDuplicateClusters(res)))
+      }
+
+      // Layer 6: Recurring Zones
+      if (activeLayers.recurringZones) {
+        promises.push(mapsApi.getRecurringZones().then(res => setRecurringZones(res)))
+      }
+
+      await Promise.all(promises)
+    } catch (err) {
+      console.error('Error fetching GIS map data:', err)
     } finally {
       setLoading(false)
-      loadingRef.current = false
     }
-  }, [activeFilters, onLoaded])
+  }, [activeLayers, filters])
 
+  // Reload when bbox or filters change
   useEffect(() => {
-    if (bbox) loadBboxMarkers(bbox)
-  }, [bbox, activeFilters, loadBboxMarkers])
+    if (bbox) {
+      loadMapData(bbox, currentZoom)
+    }
+  }, [bbox, currentZoom, loadMapData])
 
-  // Load heatmap
-  const loadHeat = useCallback(async () => {
-    if (!mapRef.current || !heatOn) { setHeatPoints([]); return }
-    const b = mapRef.current.getBounds()
-    try {
-      const rows = await complaintsApi.heatmap({
-        minLng: b.getWest(), minLat: b.getSouth(), maxLng: b.getEast(), maxLat: b.getNorth(),
-        zoom: mapRef.current.getZoom(), ...activeFilters
-      })
-      setHeatPoints(Array.isArray(rows) ? rows : [])
-    } catch { setHeatPoints([]) }
-  }, [heatOn, activeFilters])
-
-  useEffect(() => { loadHeat() }, [loadHeat, bbox])
-
-  // Load nearby complaints using PostGIS
-  const loadNearby = useCallback(async (lat, lng, r) => {
-    if (!lat || !lng) return
-    setNearbyLoading(true)
-    try {
-      const rows = await complaintsApi.nearby({ lat, lng, radius: r || radius, limit: 30 })
-      setNearbyComplaints(Array.isArray(rows) ? rows : [])
-    } catch { setNearbyComplaints([]) }
-    finally { setNearbyLoading(false) }
-  }, [radius])
-
+  // 3. Real-Time SSE Sync
   useEffect(() => {
-    if (userLocation) loadNearby(userLocation[0], userLocation[1], radius)
-  }, [userLocation, radius, loadNearby])
+    let es = null
+    try {
+      const token = getTokens()?.accessToken || localStorage.getItem('cgn_token')
+      const base = API_BASE
+      const url = `${base}/realtime/stream${token ? `?token=${encodeURIComponent(token)}` : ''}`
+      es = new EventSource(url)
 
-  // Geolocation
-  function locateMe() {
-    if (!navigator.geolocation) { setLocStatus('error'); return }
-    setLocStatus('locating')
-    setUserLocation(null)
-    setLocAddress('')
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const lat = pos.coords.latitude
-        const lng = pos.coords.longitude
-        const acc = pos.coords.accuracy
-        setUserLocation([lat, lng])
-        setAccuracy(acc || null)
-        setLocStatus('done')
-        setFlyTarget({ lat, lng })
-        // Reverse geocode (best-effort)
+      es.onmessage = (event) => {
         try {
-          const r = await maptiler.reverseGeocode(lat, lng)
-          if (r.status === 'ok' && r.result) setLocAddress(r.result.formatted || '')
-        } catch {}
-        if (onLocationSelect) onLocationSelect({ lat, lng })
+          const data = JSON.parse(event.data)
+          if (data.type === 'COMPLAINT_CREATED' || data.type === 'COMPLAINT_STATUS_UPDATED') {
+            if (bbox) loadMapData(bbox, currentZoom)
+          }
+        } catch (e) {}
+      }
+    } catch (e) {}
+
+    return () => {
+      if (es) es.close()
+    }
+  }, [bbox, currentZoom, loadMapData])
+
+  // 4. Geolocation handler
+  const handleLocateMe = () => {
+    if (!navigator.geolocation) return
+    setLocating(true)
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords
+        setUserLocation({ lat: latitude, lng: longitude })
+        setPanTarget([latitude, longitude])
+        setLocating(false)
       },
-      (err) => {
-        setLocStatus(err && err.code === 1 ? 'denied' : 'error')
-        setUserLocation(null)
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 }
+      () => setLocating(false),
+      { enableHighAccuracy: true, timeout: 10000 }
     )
   }
 
-  // Debounced search using MapTiler
-  useEffect(() => {
-    if (!searchTerm || !searchTerm.trim()) {
-      setSearchResults([])
-      setSearchStatus('idle')
+  // 5. Search handler
+  const handleSearch = (e) => {
+    e.preventDefault()
+    if (!searchQuery.trim()) return
+
+    // Check if searching for a ward
+    const wardMatch = wards.find(w => w.name.toLowerCase().includes(searchQuery.trim().toLowerCase()))
+    if (wardMatch && wardMatch.geojson?.coordinates) {
+      const coords = wardMatch.geojson.coordinates[0][0]
+      setPanTarget([coords[1], coords[0]])
+      setSelectedWard(wardMatch)
       return
     }
-    setSearchStatus('loading')
-    if (searchAbortRef.current) searchAbortRef.current.abort()
-    const ctrl = new AbortController()
-    searchAbortRef.current = ctrl
-    const t = setTimeout(async () => {
-      const r = await maptiler.searchPlaces(searchTerm.trim(), { signal: ctrl.signal })
-      if (ctrl.signal.aborted) return
-      setSearchStatus(r.status === 'ok' ? (r.results.length ? 'done' : 'empty') : 'error')
-      setSearchResults(r.results || [])
-    }, 450)
-    return () => { clearTimeout(t); ctrl.abort() }
-  }, [searchTerm])
 
-  function selectSearchResult(r) {
-    if (!r || r.lat == null || r.lng == null) return
-    setSelectedLocation({ lat: r.lat, lng: r.lng, formatted: r.formatted })
-    setSearchTerm(r.formatted || '')
-    setSearchResults([])
-    setSearchOpen(false)
-    setFlyTarget({ lat: r.lat, lng: r.lng })
-    if (onLocationSelect) onLocationSelect({ lat: r.lat, lng: r.lng, formatted: r.formatted })
+    // Check if searching for complaint in current list
+    const compMatch = complaints.find(c =>
+      String(c.id) === searchQuery.trim() ||
+      c.ticketId?.toLowerCase() === searchQuery.trim().toLowerCase() ||
+      c.title?.toLowerCase().includes(searchQuery.trim().toLowerCase())
+    )
+    if (compMatch && compMatch.lat && compMatch.lng) {
+      setPanTarget([compMatch.lat, compMatch.lng])
+      setSelectedComplaint(compMatch)
+      return
+    }
   }
 
-  function handleNearbySelect(c) {
-    if (c.lat == null || c.lng == null) return
-    setFlyTarget({ lat: c.lat, lng: c.lng })
+  const toggleLayer = (layerKey) => {
+    setActiveLayers(prev => ({ ...prev, [layerKey]: !prev[layerKey] }))
   }
 
-  function resetLocation() {
-    setSelectedLocation(null)
-    setUserLocation(null)
-    setAccuracy(null)
-    setLocStatus('idle')
-    setLocAddress('')
-    if (onLocationSelect) onLocationSelect(null)
-  }
+  const tileConfig = getTileConfig(isDark)
 
-  const hasActiveFilters = Object.values(activeFilters).some(Boolean)
-  const locStatusIcon = {
-    idle: <Navigation2 className="h-4 w-4" />,
-    locating: <Loader2 className="h-4 w-4 animate-spin" />,
-    done: <LocateFixed className="h-4 w-4 text-emerald-500" />,
-    denied: <AlertCircle className="h-4 w-4 text-red-400" />,
-    error: <AlertCircle className="h-4 w-4 text-amber-400" />
-  }[locStatus] || <Navigation2 className="h-4 w-4" />
-
-  // ── Render ──────────────────────────────────────────────────────────────────
   return (
-    <div
-      className={`relative flex gap-0 overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700 shadow-lg`}
-      style={{ height, minHeight: preview ? 280 : 400 }}
-    >
-      {/* ── Map area ── */}
-      <div className="relative flex-1 min-w-0">
-        <MapContainer
-          center={center}
-          zoom={zoom}
-          style={{ height: '100%', width: '100%' }}
-          zoomControl={!preview}
-        >
-          <MapRefSetter mapRef={mapRef} />
-          <BboxTracker onBbox={setBbox} />
-          {flyTarget && <FlyToLocation target={flyTarget} key={`${flyTarget.lat},${flyTarget.lng}`} />}
+    <div className="relative rounded-3xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-md bg-slate-100 dark:bg-slate-900" style={{ height }}>
+      {/* ── Top GIS Command Toolbar ────────────────────────────────────────── */}
+      <div className="absolute top-4 left-4 right-4 z-[1000] flex flex-wrap items-center justify-between gap-2.5 pointer-events-none">
+        {/* Search Bar */}
+        <form onSubmit={handleSearch} className="pointer-events-auto flex items-center bg-white/90 dark:bg-slate-900/90 backdrop-blur-md rounded-2xl shadow-lg border border-slate-200/80 dark:border-slate-700/80 p-1 px-3 w-full max-w-sm sm:max-w-md">
+          <Search className="h-4 w-4 text-slate-400 shrink-0 mr-2" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search Ticket ID (CGN-00123), Ward, Area..."
+            className="w-full bg-transparent text-xs font-semibold text-slate-800 dark:text-white placeholder:text-slate-400 focus:outline-none py-1.5"
+          />
+          {loading ? (
+            <Loader2 className="h-4 w-4 text-emerald-500 animate-spin shrink-0" />
+          ) : (
+            <button type="submit" className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 px-2 py-0.5 hover:underline">
+              Go
+            </button>
+          )}
+        </form>
 
-          <TileLayer
-            key={dark ? 'dark' : 'light'}
-            url={tileError ? tileConfig.fallback : tileConfig.url}
-            attribution={tileConfig.attribution}
-            maxZoom={tileConfig.maxZoom}
-            eventHandlers={{
-              load: () => setTileError(false),
-              tileerror: () => setTileError(true)
+        {/* Action Buttons & Layer Controls */}
+        <div className="pointer-events-auto flex items-center gap-2">
+          {/* Locate Button */}
+          <button
+            type="button"
+            onClick={handleLocateMe}
+            disabled={locating}
+            title="Locate Me"
+            className="flex items-center gap-1.5 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md text-slate-700 dark:text-slate-200 p-2.5 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 shadow-lg hover:bg-white dark:hover:bg-slate-800 transition-all cursor-pointer"
+          >
+            <LocateFixed className={`h-4 w-4 text-emerald-600 dark:text-emerald-400 ${locating ? 'animate-spin' : ''}`} />
+            <span className="hidden sm:inline text-xs font-bold">Around Me</span>
+          </button>
+
+          {/* Layer Selector Dropdown */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setLayerMenuOpen(!layerMenuOpen)}
+              className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2.5 rounded-2xl shadow-lg transition-all cursor-pointer text-xs font-bold"
+            >
+              <Layers className="h-4 w-4" />
+              <span>GIS Layers</span>
+              <ChevronDown className="h-3.5 w-3.5" />
+            </button>
+
+            {layerMenuOpen && (
+              <div className="absolute right-0 top-12 w-64 bg-white dark:bg-[#0E1B2E] rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 p-3 space-y-1 z-[1100] text-xs animate-in fade-in zoom-in-95 duration-150">
+                <div className="font-bold text-slate-800 dark:text-white px-2 py-1 border-b border-slate-100 dark:border-slate-800 mb-1 flex items-center justify-between">
+                  <span>MUNICIPAL LAYERS</span>
+                  <span className="text-[10px] text-emerald-600 font-semibold">PostGIS Active</span>
+                </div>
+                {GIS_LAYERS.map((layer) => {
+                  const isActive = activeLayers[layer.key]
+                  return (
+                    <button
+                      key={layer.key}
+                      type="button"
+                      onClick={() => toggleLayer(layer.key)}
+                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl transition-colors text-left ${
+                        isActive
+                          ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-bold'
+                          : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2">
+                        <span>{layer.icon}</span>
+                        <span>{layer.label}</span>
+                      </span>
+                      <span className={`h-3 w-3 rounded-md border flex items-center justify-center ${isActive ? 'bg-emerald-600 border-emerald-600 text-white' : 'border-slate-300 dark:border-slate-600'}`}>
+                        {isActive && '✓'}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Leaflet Interactive Map ────────────────────────────────────────── */}
+      <MapContainer
+        center={initialCenter}
+        zoom={initialZoom}
+        style={{ height: '100%', width: '100%' }}
+        attributionControl={false}
+      >
+        <TileLayer
+          url={tileConfig.url}
+          attribution={tileConfig.attribution}
+          maxZoom={tileConfig.maxZoom}
+        />
+
+        <BboxTracker
+          onBbox={(newBbox, zoom) => {
+            setBbox(newBbox)
+            setCurrentZoom(zoom)
+          }}
+          onZoomChange={(zoom) => setCurrentZoom(zoom)}
+        />
+
+        <MapPanController targetCenter={panTarget} />
+
+        {/* User Location Marker */}
+        {userLocation && (
+          <Circle
+            center={[userLocation.lat, userLocation.lng]}
+            radius={filters.radius || 1000}
+            pathOptions={{ color: '#10b981', fillColor: '#10b981', fillOpacity: 0.15 }}
+          >
+            <Popup className="cgn-leaflet-popup">
+              <div className="p-2 text-xs font-bold text-slate-800">
+                📍 You are here
+              </div>
+            </Popup>
+          </Circle>
+        )}
+
+        {/* LAYER 1: Ward Boundaries */}
+        {activeLayers.wards && wards.map((w) => {
+          if (!w.geojson) return null
+          return (
+            <GeoJSON
+              key={`ward-${w.id}`}
+              data={w.geojson}
+              style={{
+                color: '#3b82f6',
+                weight: 2,
+                opacity: 0.7,
+                fillColor: '#3b82f6',
+                fillOpacity: 0.08
+              }}
+              eventHandlers={{
+                click: () => setSelectedWard(w)
+              }}
+            />
+          )
+        })}
+
+        {/* LAYER 2: AI Hotspots */}
+        {activeLayers.hotspots && hotspots.map((hs) => {
+          const meta = HOTSPOT_LEVEL_META[hs.riskLevel] || HOTSPOT_LEVEL_META.normal
+          return (
+            <Circle
+              key={`hs-${hs.id}`}
+              center={[hs.lat, hs.lng]}
+              radius={hs.radiusMeters || 600}
+              pathOptions={{
+                color: meta.border,
+                fillColor: meta.color,
+                fillOpacity: 0.25,
+                weight: 2.5
+              }}
+              eventHandlers={{
+                click: () => setSelectedHotspot(hs)
+              }}
+            >
+              <Popup className="cgn-leaflet-popup">
+                <div className="p-2 text-xs space-y-1.5">
+                  <div className="font-black text-slate-900 flex items-center justify-between">
+                    <span>{hs.status}</span>
+                    <span className="text-rose-600 font-black">{hs.trendDisplay}</span>
+                  </div>
+                  <div className="text-slate-600 font-semibold">{hs.name}</div>
+                  <div className="grid grid-cols-2 gap-1 text-[11px] bg-slate-50 p-1.5 rounded-lg">
+                    <div>Reports: <strong>{hs.totalReports}</strong></div>
+                    <div>Unresolved: <strong className="text-amber-600">{hs.unresolvedCount}</strong></div>
+                    <div>SLA Breaches: <strong className="text-rose-600">{hs.slaBreaches}</strong></div>
+                    <div>Trend: <strong>{hs.trendPercentage}%</strong></div>
+                  </div>
+                </div>
+              </Popup>
+            </Circle>
+          )
+        })}
+
+        {/* LAYER 3: Density Heatmap */}
+        {activeLayers.heatmap && (
+          <HeatLayer points={heatmapPoints} />
+        )}
+
+        {/* LAYER 4: Complaints Pins / Marker Clustering */}
+        {activeLayers.complaints && (
+          <MarkerClusterLayer
+            markers={complaints}
+            userLat={userLocation?.lat}
+            userLng={userLocation?.lng}
+            onSelectComplaint={(c) => {
+              setSelectedComplaint(c)
+              if (onComplaintClick) onComplaintClick(c)
             }}
           />
+        )}
 
-          {/* Complaint markers */}
-          {viewMode === 'markers' && clustered && (
-            <MarkerClusterLayer
-              markers={markers}
-              userLat={userLocation?.[0]}
-              userLng={userLocation?.[1]}
-            />
-          )}
-
-          {viewMode === 'markers' && !clustered && markers.map((m) => {
-            const lat = m.lat ?? m.location?.lat
-            const lng = m.lng ?? m.location?.lng
-            if (lat == null || lng == null) return null
-            return (
-              <Marker key={m.id} position={[lat, lng]} icon={createMarkerIcon(m)}>
-                <Popup maxWidth={260} className="cgn-leaflet-popup">
-                  <div dangerouslySetInnerHTML={{ __html: makePopupHtml(m, userLocation?.[0], userLocation?.[1]) }} />
-                </Popup>
-              </Marker>
-            )
-          })}
-
-          {/* User location */}
-          {userLocation && (
-            <>
-              <Circle
-                center={userLocation}
-                radius={accuracy || 50}
-                pathOptions={{ color: '#10b981', fillColor: '#10b981', fillOpacity: 0.1, weight: 2, dashArray: '4 4' }}
-              />
+        {/* LAYER 5: SLA Risk Markers */}
+        {activeLayers.slaRisk && (
+          <>
+            {slaRiskData.overdue.map(item => (
               <Marker
-                position={userLocation}
-                icon={L.divIcon({
-                  className: 'cgn-loc-icon',
-                  html: '<div class="cgn-loc-dot"></div>',
-                  iconSize: [18, 18], iconAnchor: [9, 9]
-                })}
+                key={`sla-od-${item.id}`}
+                position={[item.lat, item.lng]}
+                icon={createSlaRiskIcon('overdue')}
               >
-                <Popup>
-                  <div style={{ minWidth: 140, fontFamily: 'Inter, sans-serif' }}>
-                    <div style={{ fontWeight: 600, fontSize: 12, color: '#10b981', marginBottom: 2 }}>📍 Your Location</div>
-                    {locAddress && <div style={{ fontSize: 11, color: '#475569', marginBottom: 2 }}>{locAddress}</div>}
-                    <div style={{ fontSize: 10, color: '#94a3b8' }}>{userLocation[0].toFixed(5)}, {userLocation[1].toFixed(5)}</div>
-                    {accuracy && <div style={{ fontSize: 10, color: '#94a3b8' }}>Accuracy: ±{Math.round(accuracy)} m</div>}
+                <Popup className="cgn-leaflet-popup">
+                  <div className="p-2 text-xs">
+                    <span className="font-bold text-rose-600">🔴 SLA Overdue</span>
+                    <div className="font-bold text-slate-800 mt-1">{item.title}</div>
+                    <div className="text-[11px] text-slate-500">{item.departmentName}</div>
+                    <a href={`/complaints/${item.id}`} className="mt-2 inline-block text-[11px] font-bold text-emerald-600">View Ticket →</a>
                   </div>
                 </Popup>
               </Marker>
-            </>
-          )}
-
-          {/* Selected location (from search) */}
-          {selectedLocation && (
-            <Marker
-              position={[selectedLocation.lat, selectedLocation.lng]}
-              icon={L.divIcon({
-                className: 'cgn-marker-icon',
-                html: '<div class="cgn-pin cgn-pin-selected"><div class="cgn-pin-inner" style="background:#6366f1;"><span class="cgn-pin-icon">📍</span></div></div>',
-                iconSize: [30, 30], iconAnchor: [15, 30], popupAnchor: [0, -30]
-              })}
-            >
-              {selectedLocation.formatted && <Popup>{selectedLocation.formatted}</Popup>}
-            </Marker>
-          )}
-
-          {/* Heatmap */}
-          {viewMode === 'heatmap' && <HeatLayer points={heatPoints} />}
-        </MapContainer>
-
-        {/* ── Loading indicator (slim bar at top, NOT a full overlay) ── */}
-        {loading && (
-          <div className="absolute top-0 left-0 right-0 z-[900] h-1 overflow-hidden">
-            <div className="h-full bg-emerald-500 animate-pulse" style={{ width: '60%', animation: 'cgn-progress 1.5s ease-in-out infinite' }} />
-          </div>
-        )}
-
-        {/* ── Tile error banner ── */}
-        {tileError && (
-          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[900]">
-            <div className="flex items-center gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-1.5 text-xs font-medium text-amber-700 shadow dark:bg-amber-900/40 dark:text-amber-300">
-              <AlertCircle className="h-3.5 w-3.5" />
-              Using OpenStreetMap fallback
-            </div>
-          </div>
-        )}
-
-        {/* ── Map content error ── */}
-        {error && !loading && (
-          <div className="absolute bottom-16 left-3 z-[900]">
-            <div className="flex items-center gap-2 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs font-medium text-red-600 shadow dark:bg-red-900/40 dark:text-red-300">
-              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-              {error}
-              <button onClick={() => bbox && loadBboxMarkers(bbox)} className="ml-1 underline">Retry</button>
-            </div>
-          </div>
-        )}
-
-        {/* ── Controls overlay ── */}
-        {showControls && (
-          <>
-            {/* Search bar — top left */}
-            <div className="absolute left-3 top-3 z-[900] w-full max-w-[280px] sm:max-w-[320px]">
-              <div className="glass flex items-center gap-2 rounded-xl px-3 py-2.5 shadow-lg">
-                <Search className="h-4 w-4 shrink-0 text-slate-400" />
-                <input
-                  value={searchTerm}
-                  onChange={(e) => { setSearchTerm(e.target.value); setSearchOpen(true) }}
-                  onFocus={() => setSearchOpen(true)}
-                  onBlur={() => setTimeout(() => setSearchOpen(false), 180)}
-                  placeholder="Search city, area, landmark…"
-                  aria-label="Search location"
-                  className="w-full bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400 dark:text-slate-100"
-                />
-                {searchTerm && (
-                  <button onClick={() => { setSearchTerm(''); setSearchResults([]); setSearchStatus('idle') }} aria-label="Clear">
-                    <X className="h-4 w-4 text-slate-400 hover:text-slate-600" />
-                  </button>
-                )}
-              </div>
-
-              {/* Search results dropdown */}
-              <AnimatePresence>
-                {searchOpen && searchTerm && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
-                    className="mt-1 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900"
-                  >
-                    {searchStatus === 'loading' && (
-                      <div className="flex items-center gap-2 px-3 py-2.5 text-xs text-slate-400">
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" /> Searching…
-                      </div>
-                    )}
-                    {searchStatus === 'empty' && (
-                      <div className="px-3 py-2.5 text-xs text-slate-400">No results found</div>
-                    )}
-                    {searchStatus === 'error' && (
-                      <div className="px-3 py-2.5 text-xs text-red-500">Search unavailable</div>
-                    )}
-                    {(searchResults || []).map((r, i) => (
-                      <button
-                        key={i}
-                        onMouseDown={() => selectSearchResult(r)}
-                        className="block w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800 last:border-0"
-                      >
-                        <div className="flex items-start gap-2">
-                          <MapPin className="h-3.5 w-3.5 mt-0.5 shrink-0 text-slate-400" />
-                          <span className="truncate">{r.formatted}</span>
-                        </div>
-                      </button>
-                    ))}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-
-            {/* Bottom-left controls */}
-            {!preview && (
-              <div className="absolute bottom-6 left-3 z-[900] flex flex-col gap-2">
-                {/* Locate me */}
-                <button
-                  onClick={locateMe}
-                  disabled={locStatus === 'locating'}
-                  aria-label="Use my location"
-                  title="Use my location"
-                  className="glass flex h-10 w-10 items-center justify-center rounded-xl shadow-lg transition-transform hover:scale-105 disabled:opacity-60 text-slate-700 dark:text-slate-200"
-                >
-                  {locStatusIcon}
-                </button>
-
-                {/* Toggle heatmap/markers */}
-                <button
-                  onClick={() => setViewMode(v => v === 'heatmap' ? 'markers' : 'heatmap')}
-                  aria-label="Toggle heatmap"
-                  title={viewMode === 'heatmap' ? 'Show markers' : 'Show heatmap'}
-                  className={`glass flex h-10 w-10 items-center justify-center rounded-xl shadow-lg transition-transform hover:scale-105 ${viewMode === 'heatmap' ? 'text-orange-500' : 'text-slate-700 dark:text-slate-200'}`}
-                >
-                  <Thermometer className="h-5 w-5" />
-                </button>
-
-                {/* Reset */}
-                {(userLocation || selectedLocation) && (
-                  <button
-                    onClick={resetLocation}
-                    aria-label="Reset location"
-                    title="Reset location"
-                    className="glass flex h-10 w-10 items-center justify-center rounded-xl shadow-lg transition-transform hover:scale-105 text-slate-700 dark:text-slate-200"
-                  >
-                    <X className="h-5 w-5" />
-                  </button>
-                )}
-              </div>
-            )}
-
-            {/* Radius selector — bottom center */}
-            {!preview && userLocation && (
-              <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[900]">
-                <div className="glass flex items-center gap-1 rounded-xl px-2 py-1.5 shadow-lg text-xs">
-                  <Radio className="h-3.5 w-3.5 text-emerald-500" />
-                  <span className="text-slate-500 dark:text-slate-400 mr-1">Nearby:</span>
-                  {RADIUS_OPTIONS.map((opt) => (
-                    <button
-                      key={opt.value}
-                      onClick={() => setRadius(opt.value)}
-                      className={`px-2 py-0.5 rounded-lg font-medium transition-colors ${
-                        radius === opt.value
-                          ? 'bg-emerald-600 text-white'
-                          : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Marker count badge — top right */}
-            {!preview && markers.length > 0 && (
-              <div className="absolute right-3 top-3 z-[900]">
-                <div className="glass rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 shadow-lg">
-                  {markers.length} reports in view
-                </div>
-              </div>
-            )}
+            ))}
           </>
         )}
+      </MapContainer>
 
-        {/* Location status messages */}
-        {locStatus === 'denied' && (
-          <div className="absolute bottom-20 right-3 z-[900] rounded-xl bg-red-50 border border-red-200 px-3 py-2 text-xs font-medium text-red-600 shadow dark:bg-red-900/40 dark:text-red-300">
-            📵 Location permission denied. Search manually.
-          </div>
-        )}
-        {locStatus === 'error' && (
-          <div className="absolute bottom-20 right-3 z-[900] rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs font-medium text-amber-700 shadow dark:bg-amber-900/40 dark:text-amber-300 flex items-center gap-2">
-            <AlertCircle className="h-3.5 w-3.5" />
-            Could not get your location.
-            <button onClick={locateMe} className="underline font-semibold">Retry</button>
-          </div>
-        )}
+      {/* ── Floating Legend ────────────────────────────────────────────────── */}
+      <div className="absolute bottom-4 left-4 z-[1000] bg-white/90 dark:bg-slate-900/90 backdrop-blur-md rounded-2xl shadow-lg border border-slate-200/80 dark:border-slate-700/80 p-2.5 text-[11px] hidden sm:block">
+        <div className="font-bold text-slate-800 dark:text-white mb-1">GIS LEGEND</div>
+        <div className="flex items-center gap-3">
+          <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-blue-500"></span> Open</span>
+          <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-500"></span> In Progress</span>
+          <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-500"></span> Resolved</span>
+          <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-rose-500"></span> Overdue</span>
+          <span className="flex items-center gap-1"><span className="text-orange-500 font-bold">🔥</span> Hotspot</span>
+        </div>
+      </div>
 
-        {/* Location accuracy label */}
-        {locStatus === 'done' && accuracy && !preview && (
-          <div className="absolute left-3 bottom-20 z-[900]">
-            <div className="glass rounded-xl px-2.5 py-1.5 text-[10px] text-slate-500 dark:text-slate-400 shadow">
-              <span className="font-semibold text-emerald-600">◎ You are here</span>
-              {locAddress && <span className="ml-1 truncate max-w-[160px] inline-block align-bottom"> · {locAddress.split(',')[0]}</span>}
-              {' '}<span className="opacity-60">±{Math.round(accuracy)}m</span>
-            </div>
-          </div>
-        )}
-
-        {/* Legend */}
-        {showLegend && !preview && markers.length > 0 && (
+      {/* ── Slide-Over Complaint Drawer (Admin / GIS Command) ────────────────── */}
+      <AnimatePresence>
+        {selectedComplaint && (
           <motion.div
-            initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-            className="absolute bottom-6 right-3 z-[900] pointer-events-none"
+            initial={{ x: '100%' }}
+            animate={{ x: 0 }}
+            exit={{ x: '100%' }}
+            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+            className="absolute top-0 right-0 bottom-0 w-full sm:w-96 bg-white dark:bg-[#0B1628] shadow-2xl border-l border-slate-200 dark:border-slate-800 z-[1200] p-5 overflow-y-auto flex flex-col justify-between"
           >
-            <div className="glass rounded-xl p-3 shadow-lg text-[10px]">
-              <div className="mb-1.5 font-bold uppercase tracking-widest text-slate-400">Status</div>
-              {Object.entries(STATUS_META).map(([k, v]) => (
-                <div key={k} className="flex items-center gap-1.5 mb-1 text-slate-600 dark:text-slate-300">
-                  <span className="cgn-legend-dot" style={{ background: v.color }} />
-                  {v.label}
+            <div>
+              {/* Header */}
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-black bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 px-2.5 py-1 rounded-lg">
+                    {selectedComplaint.ticketId || `#${selectedComplaint.id}`}
+                  </span>
+                  <span className="text-xs font-bold capitalize text-slate-700 dark:text-slate-300">
+                    {selectedComplaint.category}
+                  </span>
                 </div>
-              ))}
-              <div className="mt-2 mb-1.5 font-bold uppercase tracking-widest text-slate-400">You</div>
-              <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
-                <span className="cgn-loc-dot" style={{ width: 8, height: 8, display: 'inline-block', borderRadius: '50%', background: '#10b981', border: '1.5px solid white', boxShadow: '0 0 0 2px rgba(16,185,129,0.3)' }} />
-                Your location
+                <button
+                  type="button"
+                  onClick={() => setSelectedComplaint(null)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
+
+              {/* Title & Status */}
+              <div className="mt-4 space-y-3">
+                <h3 className="text-sm font-black text-slate-900 dark:text-white leading-snug">
+                  {selectedComplaint.title}
+                </h3>
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="px-2 py-0.5 rounded-md font-bold capitalize bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                    Status: {selectedComplaint.status}
+                  </span>
+                  <span className="px-2 py-0.5 rounded-md font-bold capitalize bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                    Priority: {selectedComplaint.priority}
+                  </span>
+                </div>
+
+                {/* Location */}
+                <div className="text-xs text-slate-600 dark:text-slate-400 flex items-start gap-1.5 bg-slate-50 dark:bg-slate-900/60 p-2.5 rounded-xl border border-slate-200/50 dark:border-slate-800">
+                  <MapPin className="h-3.5 w-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                  <span>{selectedComplaint.address}</span>
+                </div>
+
+                {/* Department & Officer */}
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/50 dark:border-slate-800">
+                    <span className="text-[10px] text-slate-400 font-bold block">DEPARTMENT</span>
+                    <span className="font-semibold text-slate-800 dark:text-white truncate block">
+                      {selectedComplaint.departmentName || 'General Operations'}
+                    </span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/50 dark:border-slate-800">
+                    <span className="text-[10px] text-slate-400 font-bold block">ASSIGNED OFFICER</span>
+                    <span className="font-semibold text-slate-800 dark:text-white truncate block">
+                      {selectedComplaint.officerName || 'Unassigned'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* AI Intelligence snippet */}
+                {selectedComplaint.aiConfidence && (
+                  <div className="p-3 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-300/50 dark:border-emerald-800/40 text-xs space-y-1">
+                    <div className="font-bold text-emerald-900 dark:text-emerald-300 flex items-center gap-1.5">
+                      <Sparkles className="h-3.5 w-3.5 text-emerald-600" />
+                      AI Case Assessment ({Math.round(selectedComplaint.aiConfidence * 100)}% confidence)
+                    </div>
+                    {selectedComplaint.aiReason && (
+                      <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                        {selectedComplaint.aiReason}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-2 mt-4">
+              <Link
+                to={`/complaints/${selectedComplaint.id}`}
+                className="w-full flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 rounded-xl font-bold text-xs transition-colors shadow-sm"
+              >
+                <span>Open Full Case</span>
+                <ExternalLink className="h-3.5 w-3.5" />
+              </Link>
             </div>
           </motion.div>
         )}
-      </div>
-
-      {/* ── Sidebar / nearby panel ── */}
-      {showSidebar && !preview && (
-        <div className="w-72 shrink-0 flex flex-col border-l border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden">
-          <div className="px-3 py-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0">
-            <div>
-              <div className="text-xs font-bold text-slate-800 dark:text-slate-100">Nearby Reports</div>
-              {userLocation && (
-                <div className="text-[10px] text-slate-400 mt-0.5">
-                  {nearbyComplaints.length} within {(radius / 1000).toFixed(0)} km
-                </div>
-              )}
-            </div>
-            {userLocation && (
-              <button
-                onClick={() => loadNearby(userLocation[0], userLocation[1], radius)}
-                disabled={nearbyLoading}
-                aria-label="Refresh nearby"
-                className="text-slate-400 hover:text-emerald-600 transition-colors"
-              >
-                <RefreshCw className={`h-3.5 w-3.5 ${nearbyLoading ? 'animate-spin' : ''}`} />
-              </button>
-            )}
-          </div>
-          <div className="flex-1 overflow-y-auto">
-            <NearbyPanel
-              complaints={nearbyComplaints}
-              userLat={userLocation?.[0]}
-              userLng={userLocation?.[1]}
-              loading={nearbyLoading}
-              onSelect={handleNearbySelect}
-              radiusMeters={radius}
-            />
-          </div>
-          {/* Locate me shortcut */}
-          {locStatus !== 'done' && (
-            <div className="shrink-0 p-3 border-t border-slate-100 dark:border-slate-800">
-              <button
-                onClick={locateMe}
-                disabled={locStatus === 'locating'}
-                className="w-full flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold py-2.5 transition-colors disabled:opacity-60"
-              >
-                {locStatus === 'locating' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <LocateFixed className="h-3.5 w-3.5" />}
-                {locStatus === 'locating' ? 'Locating…' : 'Use My Location'}
-              </button>
-            </div>
-          )}
-        </div>
-      )}
+      </AnimatePresence>
     </div>
   )
 }

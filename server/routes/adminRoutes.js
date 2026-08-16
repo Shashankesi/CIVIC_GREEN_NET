@@ -10,12 +10,19 @@ router.use(authenticate, authorize(['admin']));
 router.get('/dashboard', adminCtl.dashboard);
 
 // User management
+router.get('/users/stats', adminCtl.getUserStats);
+router.get('/users/export', adminCtl.exportUsersCsv);
 router.get('/users', adminCtl.listUsers);
+router.post('/users', adminCtl.createUser);
 router.get('/users/:id', adminCtl.getUser);
 router.put('/users/:id', adminCtl.updateUser);
 router.put('/users/:id/role', adminCtl.updateRole);
 router.put('/users/:id/status', adminCtl.updateStatus);
 router.post('/users/:id/approve', adminCtl.approveOfficer);
+router.get('/officers/summary', adminCtl.getOfficerSummary);
+router.get('/officers/:id/full-profile', adminCtl.getOfficerFullProfile);
+router.post('/officers/:id/documents/:docType/verify', adminCtl.verifyDocument);
+router.post('/officers/:id/documents/:docType/reject', adminCtl.rejectDocument);
 
 // Departments
 router.get('/departments', adminCtl.listDepartments);
@@ -35,6 +42,7 @@ router.get('/complaints/:id', adminCtl.getComplaint);
 router.patch('/complaints/:id', adminCtl.updateComplaint);
 
 // Audit Logs
+router.get('/audit-logs/export', adminCtl.exportAuditLogs);
 router.get('/audit-logs', adminCtl.listAuditLogs);
 
 // System Health
@@ -44,6 +52,8 @@ router.get('/system-health', adminCtl.listSystemHealth);
 router.get('/email-logs', adminCtl.listEmailLogs);
 router.get('/email-stats', adminCtl.getEmailStats);
 router.post('/email-logs/:id/retry', adminCtl.retryEmail);
+router.post('/email/test', adminCtl.testEmail);
+router.post('/email/test-otp', adminCtl.testOtpEmail);
 
 // Reports
 router.get('/reports/summary', adminCtl.reportSummary);

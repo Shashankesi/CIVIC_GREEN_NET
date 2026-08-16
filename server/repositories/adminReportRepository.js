@@ -22,28 +22,32 @@ async function reportSummary(opts = {}) {
   const q = `
     SELECT
       COUNT(*)::int AS total,
-      SUM(CASE WHEN c.status = 'open' THEN 1 ELSE 0 END)::int AS open,
+      SUM(CASE WHEN c.status IN ('open', 'submitted') THEN 1 ELSE 0 END)::int AS open,
       SUM(CASE WHEN c.status = 'in_progress' THEN 1 ELSE 0 END)::int AS in_progress,
       SUM(CASE WHEN c.status = 'resolved' THEN 1 ELSE 0 END)::int AS resolved,
+      SUM(CASE WHEN c.status = 'closed' THEN 1 ELSE 0 END)::int AS closed,
+      SUM(CASE WHEN c.status IN ('resolved', 'closed') THEN 1 ELSE 0 END)::int AS completed,
       SUM(CASE WHEN c.status = 'rejected' THEN 1 ELSE 0 END)::int AS rejected,
       SUM(CASE WHEN c.status = 'pending' THEN 1 ELSE 0 END)::int AS pending,
       CASE
         WHEN COUNT(*) = 0 THEN 0
-        ELSE ROUND(100.0 * SUM(CASE WHEN c.status = 'resolved' THEN 1 ELSE 0 END) / COUNT(*), 2)
+        ELSE ROUND(100.0 * SUM(CASE WHEN c.status IN ('resolved', 'closed') THEN 1 ELSE 0 END) / COUNT(*), 2)
       END AS resolution_rate,
       COALESCE(
-        AVG(CASE WHEN c.status = 'resolved' THEN EXTRACT(EPOCH FROM (now() - c.created_at)) / 3600.0 ELSE NULL END),
+        AVG(CASE WHEN c.status IN ('resolved', 'closed') THEN EXTRACT(EPOCH FROM (now() - c.created_at)) / 3600.0 ELSE NULL END),
         0
       ) AS avg_resolution_hours
     FROM complaints c ${where}
   `;
   const r = await db.query(q, vals);
   const row = r.rows[0] || {};
+  const completed = row.completed || (row.resolved || 0) + (row.closed || 0)
   return {
     total: row.total || 0,
-    open: row.open || 0,
+    open: (row.open || 0) + (row.pending || 0),
     inProgress: row.in_progress || 0,
-    resolved: row.resolved || 0,
+    resolved: completed,
+    closed: row.closed || 0,
     rejected: row.rejected || 0,
     pending: row.pending || 0,
     resolutionRate: row.resolution_rate || 0,

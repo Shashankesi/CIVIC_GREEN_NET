@@ -3,17 +3,19 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   LayoutDashboard, FileText, Users, Building2, Map, BarChart2,
-  ShieldCheck, Bell, LogOut, Sprout,
-  ChevronsLeft, ChevronsRight, X, UserCheck
+  ShieldCheck, Bell, LogOut, ShieldAlert, Mail, Activity,
+  ChevronsLeft, ChevronsRight, X, UserCheck, Sparkles, Clock, Layers
 } from 'lucide-react'
+import CivicGreenNetLogo from './brand/CivicGreenNetLogo'
 import AuthContext from '../context/AuthContext'
 import Topbar from './Topbar'
 import adminApi from '../services/admin'
+import AIChatButton from './ai/AIChatButton'
 
 // ── Admin sidebar navigation groups ─────────────────────────────────────
 const NAV_GROUPS = [
   {
-    label: 'OVERVIEW',
+    label: 'EXECUTIVE COMMAND',
     items: [
       { tabKey: 'overview', label: 'Command Center', icon: LayoutDashboard }
     ]
@@ -21,23 +23,35 @@ const NAV_GROUPS = [
   {
     label: 'CITIZEN SERVICES',
     items: [
-      { tabKey: 'complaints', label: 'Complaints', icon: FileText, badgeKey: 'overdue' },
+      { tabKey: 'complaints', label: 'Complaints Queue', icon: FileText, badgeKey: 'overdue' },
       { tabKey: 'notifications', label: 'Notifications', icon: Bell }
     ]
   },
   {
-    label: 'CITY INTELLIGENCE',
+    label: 'CITY & GIS INTELLIGENCE',
     items: [
-      { tabKey: 'map', label: 'Live Map', icon: Map },
-      { tabKey: 'reports', label: 'Analytics & Reports', icon: BarChart2 }
+      { tabKey: 'intelligence', label: 'Civic Intelligence', icon: Sparkles },
+      { tabKey: 'map', label: 'Municipal GIS', icon: Map },
+      { tabKey: 'sla', label: 'SLA Intelligence', icon: Clock },
+      { tabKey: 'wards', label: 'Wards & Zones', icon: Layers }
     ]
   },
   {
-    label: 'GOVERNANCE',
+    label: 'MUNICIPAL GOVERNANCE',
     items: [
+      { tabKey: 'departments', label: 'Departments', icon: Building2 },
+      { tabKey: 'officer-approvals', label: 'Officers', icon: UserCheck, badgeKey: 'pendingApprovals' },
       { tabKey: 'users', label: 'User Directory', icon: Users },
-      { tabKey: 'officer-approvals', label: 'Officer Approvals', icon: UserCheck, badgeKey: 'pendingApprovals' },
-      { tabKey: 'departments', label: 'Departments', icon: Building2 }
+      { tabKey: 'reports', label: 'Performance & Reports', icon: BarChart2 },
+      { tabKey: 'data-quality', label: 'Data Quality & Alerts', icon: ShieldCheck }
+    ]
+  },
+  {
+    label: 'SYSTEM & AUDIT',
+    items: [
+      { tabKey: 'audit-logs', label: 'Audit Logs', icon: ShieldAlert },
+      { tabKey: 'email-center', label: 'Email Center', icon: Mail },
+      { tabKey: 'system-health', label: 'System Health', icon: Activity }
     ]
   }
 ]
@@ -54,16 +68,12 @@ function SidebarContent({ collapsed, onToggleCollapse, onCloseMobile, activeTab,
   return (
     <div className="flex h-full flex-col">
       {/* Logo */}
-      <div className={`flex h-16 items-center gap-2 border-b border-slate-200 px-4 dark:border-slate-800 ${collapsed ? 'justify-center' : ''}`}>
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-600 to-emerald-800 text-white shadow-lg">
-          <Sprout className="h-5 w-5" aria-hidden="true" />
-        </span>
-        {!collapsed && (
-          <div className="min-w-0">
-            <div className="truncate text-sm font-extrabold tracking-tight text-slate-900 dark:text-white">CIVIC GREENNET</div>
-            <div className="truncate text-[9px] font-semibold uppercase tracking-wider text-emerald-600">Smart City Governance</div>
-          </div>
-        )}
+      <div className={`flex h-16 items-center border-b border-slate-200 px-3.5 dark:border-slate-800 ${collapsed ? 'justify-center' : ''}`}>
+        <CivicGreenNetLogo
+          variant={collapsed ? 'symbol' : 'full'}
+          size={collapsed ? 'sm' : 'sm'}
+          descriptor="SMART CITY GOVERNANCE"
+        />
       </div>
 
       {/* Nav groups */}
@@ -79,23 +89,27 @@ function SidebarContent({ collapsed, onToggleCollapse, onCloseMobile, activeTab,
               {group.items.map((item) => {
                 const Icon = item.icon
                 const isActive = activeTab === item.tabKey
+                const badgeCount = stats?.[item.badgeKey] || 0
                 return (
                   <button
                     key={item.tabKey}
                     onClick={() => { onTabClick(item.tabKey); onCloseMobile() }}
-                    className={`group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                    title={collapsed ? `${item.label}${badgeCount > 0 ? ` (${badgeCount})` : ''}` : undefined}
+                    className={`group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${
                       isActive
-                        ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300'
-                        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white'
+                        ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-500/12 dark:text-[#6EE7B7] font-semibold border-l-[3px] border-emerald-500 shadow-xs'
+                        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-white/[0.04] dark:hover:text-slate-100'
                     } ${collapsed ? 'justify-center px-2' : ''}`}
                   >
-                    {isActive && <span className="absolute left-0 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full bg-emerald-600" aria-hidden="true" />}
-                    <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
+                    <Icon className={`h-5 w-5 shrink-0 transition-colors ${isActive ? 'text-emerald-600 dark:text-[#34D399]' : 'text-slate-400 dark:text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-200'}`} aria-hidden="true" />
                     {!collapsed && <span className="truncate">{item.label}</span>}
-                    {!collapsed && item.badgeKey && stats?.[item.badgeKey] > 0 && (
-                      <span className="ml-auto inline-flex h-5 items-center justify-center rounded-full bg-red-100 px-2 text-[10px] font-bold text-red-600 dark:bg-red-900/30 dark:text-red-400">
-                        {stats[item.badgeKey]}
+                    {!collapsed && item.badgeKey && badgeCount > 0 && (
+                      <span className="ml-auto inline-flex h-5 items-center justify-center rounded-full bg-rose-100 px-2 text-[10px] font-bold text-rose-600 dark:bg-rose-500/20 dark:text-rose-300">
+                        {badgeCount}
                       </span>
+                    )}
+                    {collapsed && item.badgeKey && badgeCount > 0 && (
+                      <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-rose-500 ring-2 ring-white dark:ring-slate-900" />
                     )}
                   </button>
                 )
@@ -106,35 +120,43 @@ function SidebarContent({ collapsed, onToggleCollapse, onCloseMobile, activeTab,
       </nav>
 
       {/* User footer */}
-      <div className="border-t border-slate-200 p-3 dark:border-slate-800">
-        <div className={`mb-2 flex items-center gap-3 rounded-lg bg-emerald-50/50 p-2 dark:bg-emerald-950/10 ${collapsed ? 'justify-center' : ''}`}>
-          {user?.avatar_url ? (
-            <img src={user.avatar_url} alt="Profile" className="h-9 w-9 shrink-0 rounded-full object-cover" />
-          ) : (
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-sm font-semibold text-white">
-              {user?.name?.charAt(0)?.toUpperCase() || 'A'}
-            </span>
-          )}
+      <div className="border-t border-slate-200 p-3 dark:border-[#24344A]">
+        <div className={`mb-2 flex items-center gap-3 rounded-lg bg-emerald-50/80 p-2.5 dark:bg-[#111C2D] border border-emerald-100 dark:border-[#24344A] ${collapsed ? 'justify-center' : ''}`}>
+          <div className="relative shrink-0">
+            {user?.avatar_url ? (
+              <img src={user.avatar_url} alt="Profile" className="h-9 w-9 rounded-full object-cover border border-emerald-500/30" />
+            ) : (
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-emerald-600 to-teal-700 text-sm font-bold text-white shadow-xs">
+                {user?.name?.charAt(0)?.toUpperCase() || 'A'}
+              </span>
+            )}
+            <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-[#111C2D]" title="Online" />
+          </div>
           {!collapsed && (
-            <div className="min-w-0">
-              <div className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{user?.name || 'Admin'}</div>
-              <div className="flex items-center gap-1 text-[10px] text-emerald-600 font-semibold uppercase">
-                <ShieldCheck className="h-3 w-3" aria-hidden="true" />
-                Administrator
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-xs font-bold text-slate-900 dark:text-white">{user?.name || 'Administrator'}</div>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span className="inline-flex items-center gap-1 text-[9px] font-extrabold uppercase tracking-wider text-emerald-700 dark:text-[#34D399] bg-emerald-100/80 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-300/50 dark:border-emerald-800/40">
+                  <ShieldCheck className="h-2.5 w-2.5" aria-hidden="true" />
+                  ADMINISTRATOR
+                </span>
+                <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                  ● Online
+                </span>
               </div>
             </div>
           )}
         </div>
         <div className="flex gap-1">
           {!collapsed && (
-            <button onClick={handleLogout} className="flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 dark:hover:bg-red-950/40">
+            <button onClick={handleLogout} className="flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 dark:text-rose-400 dark:hover:bg-rose-950/40">
               <LogOut className="h-4 w-4" aria-hidden="true" /> Logout
             </button>
           )}
           <button
             onClick={onToggleCollapse}
             aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            className="hidden flex-1 items-center justify-center rounded-lg px-3 py-2 text-slate-500 transition-colors hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 lg:flex"
+            className="hidden flex-1 items-center justify-center rounded-lg px-3 py-2 text-slate-500 transition-colors hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-[#172438] lg:flex"
           >
             {collapsed ? <ChevronsRight className="h-4 w-4" aria-hidden="true" /> : <ChevronsLeft className="h-4 w-4" aria-hidden="true" />}
           </button>
@@ -195,7 +217,7 @@ export default function AdminShell({ children, title, activeTab, onTabClick }) {
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-surface-darker">
       {/* Desktop sidebar */}
-      <aside className={`hidden shrink-0 border-r border-slate-200 bg-white transition-[width] duration-200 dark:border-slate-800 dark:bg-surface-darker lg:block ${collapsed ? 'w-16' : 'w-64'}`}>
+      <aside className={`hidden shrink-0 border-r border-slate-200 bg-white transition-[width] duration-200 dark:border-[#24344A] dark:bg-[#081321] lg:block ${collapsed ? 'w-16' : 'w-64'}`}>
         <SidebarContent {...sidebarProps} />
       </aside>
 
@@ -234,6 +256,7 @@ export default function AdminShell({ children, title, activeTab, onTabClick }) {
           <div className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-8">{children}</div>
         </main>
       </div>
+      <AIChatButton persona="admin" />
     </div>
   )
 }

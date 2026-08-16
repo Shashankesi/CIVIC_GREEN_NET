@@ -3,8 +3,8 @@ const { GEMINI } = require('./index');
 
 // Official Google AI Studio / Gemini API
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
-const GEMINI_MODEL = 'gemini-1.5-flash';
-const EMBEDDING_MODEL = 'text-embedding-004';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || 'text-embedding-004';
 
 const ANALYZE_PROMPT = `Analyze the following civic complaint text and return a JSON object (no markdown, no code fences) with ONLY these keys:
 - "title": concise descriptive title

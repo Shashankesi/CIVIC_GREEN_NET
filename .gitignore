@@ -1,11 +1,18 @@
-# Environment files
+# Environment files — NEVER COMMIT REAL SECRETS
 .env
 .env.*
-.env.example
-.env.example.*
+server/.env
+server/.env.*
+client/.env
+client/.env.*
+!.env.example
+!server/.env.example
+!client/.env.example
 
-# Node
+# Node dependencies
 node_modules/
+client/node_modules/
+server/node_modules/
 npm-debug.log*
 yarn-debug.log*
 pnpm-debug.log*
@@ -17,7 +24,7 @@ coverage/
 client/dist/
 server/coverage/
 
-# Logs
+# Logs & test outputs
 *.log
 logs/
 server/server_stdout.log
@@ -25,21 +32,19 @@ server/server_stderr.log
 server/test_out.txt
 server/test_results_latest.txt
 
-# OS
+# OS metadata
 .DS_Store
 Thumbs.db
 
-# IDE
+# IDE configuration
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json
 .idea/
 
-# Runtime
+# Runtime & temporary files
 *.pid
 *.seed
-
-# Temporary
 tmp/
 temp/
 server/tmp/
@@ -49,6 +54,7 @@ server/tmp/
 *.pem
 *.key
 *.crt
+*.p12
 credentials.json
 service-account*.json
 
@@ -58,3 +64,4 @@ uploads/
 
 # AI Agent Workspace
 brain/
+scratch/

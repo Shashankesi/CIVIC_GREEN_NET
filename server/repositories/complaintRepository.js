@@ -1,5 +1,21 @@
 const db = require('../config/db');
 
+function getCategoriesForDepartment(deptName) {
+  if (!deptName) return [];
+  const name = deptName.toLowerCase();
+  const cats = [];
+  if (name.includes('road')) cats.push('roads');
+  if (name.includes('sanitat') || name.includes('waste')) cats.push('sanitation');
+  if (name.includes('light')) cats.push('lighting');
+  if (name.includes('water')) cats.push('utilities');
+  if (name.includes('sewer') || name.includes('drain')) cats.push('drainage', 'utilities');
+  if (name.includes('park') || name.includes('horticult')) cats.push('parks');
+  if (name.includes('traffic') || name.includes('transport') || name.includes('safety')) cats.push('public_safety', 'roads');
+  if (name.includes('electr')) cats.push('electrical', 'lighting');
+  cats.push(name);
+  return cats;
+}
+
 async function createComplaint({ userId, departmentId, title, summary, description, category, priority, severity, isAnonymous, address, location, sla_due_at }) {
   const q = `INSERT INTO complaints(user_id, department_id, title, summary, description, category, priority, severity, is_anonymous, address, location, created_at, sla_due_at)
       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, ST_SetSRID(ST_MakePoint($11,$12),4326), now(), $13) RETURNING *`;
@@ -28,7 +44,7 @@ async function listComplaints({ limit = 20, offset = 0, filters = {} } = {}) {
 }
 
 async function getById(id) {
-  const q = 'SELECT * FROM complaints WHERE id=$1';
+  const q = `SELECT *, ST_X(location::geometry) AS lng, ST_Y(location::geometry) AS lat FROM complaints WHERE id=$1`;
   const r = await db.query(q, [id]);
   return r.rows[0];
 }
@@ -66,7 +82,9 @@ async function statsSummary(userId = null) {
       (SELECT COUNT(*) FROM complaints ${userFilter}) AS total,
       (SELECT COUNT(*) FROM complaints ${userFilter} ${userId ? 'AND' : 'WHERE'} status='open') AS open,
       (SELECT COUNT(*) FROM complaints ${userFilter} ${userId ? 'AND' : 'WHERE'} status='in_progress') AS in_progress,
-      (SELECT COUNT(*) FROM complaints ${userFilter} ${userId ? 'AND' : 'WHERE'} status='resolved') AS resolved`;
+      (SELECT COUNT(*) FROM complaints ${userFilter} ${userId ? 'AND' : 'WHERE'} status='resolved') AS resolved,
+      (SELECT COUNT(*) FROM complaints ${userFilter} ${userId ? 'AND' : 'WHERE'} status='reopened') AS reopened,
+      (SELECT COUNT(*) FROM complaints ${userFilter} ${userId ? 'AND' : 'WHERE'} status='closed') AS closed`;
   if (userId) params.push(userId);
   const r = await db.query(q, params);
   return r.rows[0];
@@ -113,23 +131,173 @@ async function monthlyTrend(months = 6, userId = null) {
 }
 
 async function searchComplaints(opts = {}) {
-  const { q = null, category = null, departmentId = null, status = null, priority = null, dateFrom = null, dateTo = null, lat = null, lng = null, radius = null, page = 1, limit = 20, sortBy = 'created_at', sortDir = 'desc' } = opts;
+  const { q = null, userId = null, officerId = null, officerScopeId = null, category = null, departmentId = null, status = null, priority = null, dateFrom = null, dateTo = null, lat = null, lng = null, radius = null, page = 1, limit = 20, sortBy = 'created_at', sortDir = 'desc', assigned = null, dueSoon = null } = opts;
   const conditions = [];
   const vals = [];
   let idx = 1;
-  if (q) { conditions.push(`(similarity(title, $${idx}) > 0.1 OR title ILIKE $${idx} OR description ILIKE $${idx})`); vals.push(q); idx++; }
-  if (category) { conditions.push(`category=$${idx++}`); vals.push(category); }
-  if (departmentId) { conditions.push(`department_id=$${idx++}`); vals.push(departmentId); }
-  if (status) { conditions.push(`status=$${idx++}`); vals.push(status); }
-  if (priority) { conditions.push(`priority=$${idx++}`); vals.push(priority); }
-  if (dateFrom) { conditions.push(`created_at >= $${idx++}`); vals.push(dateFrom); }
-  if (dateTo) { conditions.push(`created_at <= $${idx++}`); vals.push(dateTo); }
-  if (lat && lng && radius) { conditions.push(`ST_DWithin(location::geography, ST_SetSRID(ST_MakePoint($${idx++},$${idx++}),4326)::geography, $${idx++})`); vals.push(lng, lat, radius); }
+  if (q && String(q).trim()) {
+    const term = String(q).trim();
+    conditions.push(`(title ILIKE $${idx} OR description ILIKE $${idx} OR id::text LIKE $${idx} OR ('CGN-' || lpad(id::text, 5, '0')) ILIKE $${idx})`);
+    vals.push(`%${term}%`);
+    idx++;
+  }
+  if (userId && !isNaN(parseInt(userId, 10))) {
+    conditions.push(`user_id = $${idx++}`);
+    vals.push(parseInt(userId, 10));
+  }
+  if (officerId && !isNaN(parseInt(officerId, 10))) {
+    conditions.push(`officer_id = $${idx++}`);
+    vals.push(parseInt(officerId, 10));
+  }
+  
+  if (assigned === 'true' || assigned === true) {
+    conditions.push(`officer_id IS NOT NULL`);
+  } else if (assigned === 'false' || assigned === false) {
+    conditions.push(`officer_id IS NULL`);
+  }
+  
+  if (dueSoon === 'true' || dueSoon === true) {
+    conditions.push(`status NOT IN ('resolved', 'closed', 'rejected') AND sla_due_at IS NOT NULL AND sla_due_at > now() AND sla_due_at <= now() + INTERVAL '24 hours'`);
+  }
+  
+  if (officerScopeId) {
+    const officerRes = await db.query(`
+      SELECT u.department_id, u.settings, u.municipality_id, u.zone_id, u.ward_id, u.jurisdiction,
+      m.name AS municipality_name, z.name AS zone_name, w.name AS ward_name,
+      d.name AS department_name
+      FROM users u
+      LEFT JOIN municipalities m ON m.id = u.municipality_id
+      LEFT JOIN zones z ON z.id = u.zone_id
+      LEFT JOIN wards w ON w.id = u.ward_id
+      LEFT JOIN departments d ON d.id = u.department_id
+      WHERE u.id = $1
+    `, [officerScopeId]);
+
+    if (officerRes.rows.length) {
+      const u = officerRes.rows[0];
+      const offLat = parseFloat(u.settings?.latitude || u.settings?.lat);
+      const offLng = parseFloat(u.settings?.longitude || u.settings?.lng);
+      const offRadius = parseFloat(u.settings?.radius || u.settings?.radius_km * 1000) || 10000;
+
+      const isGeneralOfficer = !u.department_id && !u.municipality_id && !u.zone_id && !u.ward_id && !u.jurisdiction && (isNaN(offLat) || isNaN(offLng));
+
+      if (!isGeneralOfficer) {
+        const scopeConditions = [];
+        
+        // Condition 1: Assigned to them
+        scopeConditions.push(`officer_id = $${idx++}`);
+        vals.push(officerScopeId);
+        
+        // Condition 2: Matches department (or department name categories)
+        if (u.department_id) {
+          scopeConditions.push(`department_id = $${idx++}`);
+          vals.push(u.department_id);
+
+          const cats = getCategoriesForDepartment(u.department_name);
+          if (cats.length) {
+            const catPlaceholders = cats.map(cat => {
+              vals.push(cat);
+              return `$${idx++}`;
+            });
+            scopeConditions.push(`category IN (${catPlaceholders.join(',')})`);
+          }
+        }
+        
+        // Condition 3: Matches location radius
+        if (!isNaN(offLat) && !isNaN(offLng)) {
+          scopeConditions.push(`ST_DWithin(location::geography, ST_SetSRID(ST_MakePoint($${idx++},$${idx++}),4326)::geography, $${idx++})`);
+          vals.push(offLng, offLat, offRadius);
+        }
+        
+        // Condition 4: Fallback to municipality name matches in address text
+        if (u.municipality_name) {
+          scopeConditions.push(`address ILIKE $${idx++}`);
+          vals.push(`%${u.municipality_name}%`);
+        }
+        // Condition 5: Fallback to zone name matches in address text
+        if (u.zone_name) {
+          scopeConditions.push(`address ILIKE $${idx++}`);
+          vals.push(`%${u.zone_name}%`);
+        }
+        // Condition 6: Fallback to ward name matches in address text
+        if (u.ward_name) {
+          scopeConditions.push(`address ILIKE $${idx++}`);
+          vals.push(`%${u.ward_name}%`);
+        }
+        // Condition 7: Fallback to jurisdiction text matches in address text
+        if (u.jurisdiction) {
+          scopeConditions.push(`address ILIKE $${idx++}`);
+          vals.push(`%${u.jurisdiction}%`);
+        }
+        
+        if (scopeConditions.length) {
+          conditions.push(`(${scopeConditions.join(' OR ')})`);
+        }
+      }
+    }
+  }
+
+  if (category && String(category).trim()) {
+    conditions.push(`category = $${idx++}`);
+    vals.push(String(category).trim());
+  }
+  if (departmentId && !isNaN(parseInt(departmentId, 10))) {
+    conditions.push(`department_id = $${idx++}`);
+    vals.push(parseInt(departmentId, 10));
+  }
+  if (status && String(status).trim()) {
+    const rawStatus = String(status).trim().toLowerCase().replace('-', '_');
+    conditions.push(`status = $${idx++}`);
+    vals.push(rawStatus);
+  }
+  if (priority && String(priority).trim()) {
+    conditions.push(`priority = $${idx++}`);
+    vals.push(String(priority).trim().toLowerCase());
+  }
+  if (dateFrom && String(dateFrom).trim()) {
+    conditions.push(`created_at >= $${idx++}::timestamp`);
+    vals.push(dateFrom);
+  }
+  if (dateTo && String(dateTo).trim()) {
+    conditions.push(`created_at < ($${idx++}::date + INTERVAL '1 day')`);
+    vals.push(dateTo);
+  }
+  if (lat && lng && radius) {
+    conditions.push(`ST_DWithin(location::geography, ST_SetSRID(ST_MakePoint($${idx++},$${idx++}),4326)::geography, $${idx++})`);
+    vals.push(lng, lat, radius);
+  }
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const offset = (page - 1) * limit;
-  const order = `ORDER BY ${sortBy} ${sortDir.toUpperCase() === 'ASC' ? 'ASC' : 'DESC'}`;
-  const qStr = `SELECT id,user_id,department_id,title,summary,status,priority,category,created_at FROM complaints ${where} ${order} LIMIT $${idx++} OFFSET $${idx++}`;
+  let order = `ORDER BY ${sortBy} ${sortDir.toUpperCase() === 'ASC' ? 'ASC' : 'DESC'}`;
+  if (sortBy === 'priority_val') {
+    order = `ORDER BY CASE WHEN priority = 'critical' THEN 4 WHEN priority = 'high' THEN 3 WHEN priority = 'medium' THEN 2 ELSE 1 END ${sortDir.toUpperCase() === 'ASC' ? 'ASC' : 'DESC'}`;
+  }
+  const qStr = `
+    SELECT
+      id,
+      user_id,
+      department_id,
+      title,
+      summary,
+      description,
+      status,
+      priority,
+      category,
+      created_at,
+      address,
+      ST_X(location::geometry) AS lng,
+      ST_Y(location::geometry) AS lat,
+      officer_id,
+      sla_due_at,
+      resolution_at,
+      is_anonymous
+    FROM complaints
+    ${where}
+    ${order}
+    LIMIT $${idx++} OFFSET $${idx++}
+  `;
   vals.push(limit, offset);
+
   const r = await db.query(qStr, vals);
   return r.rows;
 }
@@ -227,10 +395,107 @@ async function bboxQuery(minLng, minLat, maxLng, maxLat, { limit = 100, offset =
   return r.rows;
 }
 
-async function nearbyComplaints(lat, lng, radiusMeters = 1000, { limit = 50, offset = 0 } = {}) {
-  const q = `SELECT id,title,summary,category,priority,status, ST_X(location::geometry) AS lng, ST_Y(location::geometry) AS lat, ST_Distance(location::geography, ST_SetSRID(ST_MakePoint($1,$2),4326)::geography) AS distance FROM complaints WHERE ST_DWithin(location::geography, ST_SetSRID(ST_MakePoint($1,$2),4326)::geography, $3) ORDER BY distance LIMIT $4 OFFSET $5`;
-  const r = await db.query(q, [lng, lat, radiusMeters, limit, offset]);
+async function nearbyComplaints(lat, lng, radiusMeters = 1000, { limit = 50, offset = 0, filters = {} } = {}) {
+  const conditions = [`ST_DWithin(location::geography, ST_SetSRID(ST_MakePoint($1,$2),4326)::geography, $3)`];
+  const vals = [lng, lat, radiusMeters];
+  let idx = 4;
+  if (filters.category) { conditions.push(`category=$${idx++}`); vals.push(filters.category); }
+  if (filters.status) { conditions.push(`status=$${idx++}`); vals.push(filters.status); }
+  if (filters.priority) { conditions.push(`priority=$${idx++}`); vals.push(filters.priority); }
+  if (filters.officerId) { conditions.push(`officer_id=$${idx++}`); vals.push(filters.officerId); }
+
+  const where = `WHERE ${conditions.join(' AND ')}`;
+  const q = `SELECT id,title,summary,category,priority,status,address, ST_X(location::geometry) AS lng, ST_Y(location::geometry) AS lat, ST_Distance(location::geography, ST_SetSRID(ST_MakePoint($1,$2),4326)::geography) AS distance FROM complaints ${where} ORDER BY distance LIMIT $${idx++} OFFSET $${idx++}`;
+  vals.push(limit, offset);
+  const r = await db.query(q, vals);
   return r.rows;
+}
+
+async function getOfficerDashboardStats(officerId) {
+  // Retrieve officer profile details for scope validation
+  const officerRes = await db.query(`
+    SELECT u.department_id, u.settings, u.municipality_id, u.zone_id, u.ward_id, u.jurisdiction,
+    m.name AS municipality_name, z.name AS zone_name, w.name AS ward_name,
+    d.name AS department_name
+    FROM users u
+    LEFT JOIN municipalities m ON m.id = u.municipality_id
+    LEFT JOIN zones z ON z.id = u.zone_id
+    LEFT JOIN wards w ON w.id = u.ward_id
+    LEFT JOIN departments d ON d.id = u.department_id
+    WHERE u.id = $1
+  `, [officerId]);
+  
+  let scopeCondition = '1=1';
+  const vals = [officerId];
+  let idx = 2;
+
+  if (officerRes.rows.length) {
+    const u = officerRes.rows[0];
+    const offLat = parseFloat(u.settings?.latitude || u.settings?.lat);
+    const offLng = parseFloat(u.settings?.longitude || u.settings?.lng);
+    const offRadius = parseFloat(u.settings?.radius || u.settings?.radius_km * 1000) || 10000;
+    
+    const isGeneralOfficer = !u.department_id && !u.municipality_id && !u.zone_id && !u.ward_id && !u.jurisdiction && (isNaN(offLat) || isNaN(offLng));
+
+    if (!isGeneralOfficer) {
+      const scopeConditions = ['officer_id = $1'];
+      
+      if (u.department_id) {
+        scopeConditions.push(`department_id = $${idx++}`);
+        vals.push(u.department_id);
+
+        const cats = getCategoriesForDepartment(u.department_name);
+        if (cats.length) {
+          const catPlaceholders = cats.map(cat => {
+            vals.push(cat);
+            return `$${idx++}`;
+          });
+          scopeConditions.push(`category IN (${catPlaceholders.join(',')})`);
+        }
+      }
+      
+      if (!isNaN(offLat) && !isNaN(offLng)) {
+        scopeConditions.push(`ST_DWithin(location::geography, ST_SetSRID(ST_MakePoint($${idx++},$${idx++}),4326)::geography, $${idx++})`);
+        vals.push(offLng, offLat, offRadius);
+      }
+      
+      if (u.municipality_name) {
+        scopeConditions.push(`address ILIKE $${idx++}`);
+        vals.push(`%${u.municipality_name}%`);
+      }
+      if (u.zone_name) {
+        scopeConditions.push(`address ILIKE $${idx++}`);
+        vals.push(`%${u.zone_name}%`);
+      }
+      if (u.ward_name) {
+        scopeConditions.push(`address ILIKE $${idx++}`);
+        vals.push(`%${u.ward_name}%`);
+      }
+      if (u.jurisdiction) {
+        scopeConditions.push(`address ILIKE $${idx++}`);
+        vals.push(`%${u.jurisdiction}%`);
+      }
+      
+      scopeCondition = `(${scopeConditions.join(' OR ')})`;
+    }
+  }
+
+  const q = `SELECT
+    COUNT(*)::int AS total,
+    COUNT(CASE WHEN officer_id = $1 THEN 1 END)::int AS assigned_to_me,
+    COUNT(CASE WHEN status = 'open' THEN 1 END)::int AS open,
+    COUNT(CASE WHEN status = 'in_progress' OR status = 'reopened' THEN 1 END)::int AS in_progress,
+    COUNT(CASE WHEN priority = 'high' THEN 1 END)::int AS high_priority,
+    COUNT(CASE WHEN priority = 'critical' THEN 1 END)::int AS critical,
+    COUNT(CASE WHEN status = 'resolved' THEN 1 END)::int AS resolved,
+    COUNT(CASE WHEN officer_id IS NULL THEN 1 END)::int AS unassigned,
+    COUNT(CASE WHEN status NOT IN ('resolved', 'closed') AND sla_due_at IS NOT NULL AND sla_due_at > now() AND sla_due_at <= now() + INTERVAL '24 hours' THEN 1 END)::int AS due_soon,
+    COUNT(CASE WHEN status NOT IN ('resolved', 'closed') AND sla_due_at IS NOT NULL AND sla_due_at < now() THEN 1 END)::int AS overdue
+    FROM complaints
+    WHERE ${scopeCondition}`;
+  
+  const r = await db.query(q, vals);
+  return r.rows[0];
 }
 
 async function getTimeline(complaintId) {
@@ -253,6 +518,210 @@ async function addStatusHistory(complaintId, from, to, changedBy, note) {
   return r.rows[0];
 }
 
+async function getComplaintVotes(complaintId, userId = null) {
+  const countRes = await db.query('SELECT COUNT(*)::int as count FROM complaint_votes WHERE complaint_id=$1', [complaintId]);
+  let hasVoted = false;
+  if (userId) {
+    const userRes = await db.query('SELECT 1 FROM complaint_votes WHERE complaint_id=$1 AND user_id=$2', [complaintId, userId]);
+    hasVoted = userRes.rows.length > 0;
+  }
+  return { count: countRes.rows[0]?.count || 0, hasVoted };
+}
+
+async function toggleVote(complaintId, userId) {
+  const existing = await db.query('SELECT id FROM complaint_votes WHERE complaint_id=$1 AND user_id=$2', [complaintId, userId]);
+  if (existing.rows.length > 0) {
+    await db.query('DELETE FROM complaint_votes WHERE complaint_id=$1 AND user_id=$2', [complaintId, userId]);
+    const { count } = await getComplaintVotes(complaintId, userId);
+    return { hasVoted: false, count };
+  } else {
+    await db.query('INSERT INTO complaint_votes (complaint_id, user_id, created_at) VALUES ($1, $2, now()) ON CONFLICT DO NOTHING', [complaintId, userId]);
+    const { count } = await getComplaintVotes(complaintId, userId);
+    return { hasVoted: true, count };
+  }
+}
+
+async function getComplaintFollow(complaintId, userId = null) {
+  const countRes = await db.query('SELECT COUNT(*)::int as count FROM complaint_follows WHERE complaint_id=$1', [complaintId]);
+  let isFollowing = false;
+  if (userId) {
+    const userRes = await db.query('SELECT 1 FROM complaint_follows WHERE complaint_id=$1 AND user_id=$2', [complaintId, userId]);
+    isFollowing = userRes.rows.length > 0;
+  }
+  return { count: countRes.rows[0]?.count || 0, isFollowing };
+}
+
+async function toggleFollow(complaintId, userId) {
+  const existing = await db.query('SELECT id FROM complaint_follows WHERE complaint_id=$1 AND user_id=$2', [complaintId, userId]);
+  if (existing.rows.length > 0) {
+    await db.query('DELETE FROM complaint_follows WHERE complaint_id=$1 AND user_id=$2', [complaintId, userId]);
+    const { count } = await getComplaintFollow(complaintId, userId);
+    return { isFollowing: false, count };
+  } else {
+    await db.query('INSERT INTO complaint_follows (complaint_id, user_id, created_at) VALUES ($1, $2, now()) ON CONFLICT DO NOTHING', [complaintId, userId]);
+    const { count } = await getComplaintFollow(complaintId, userId);
+    return { isFollowing: true, count };
+  }
+}
+
+async function listFollowedComplaints(userId, limit = 20, offset = 0) {
+  const q = `
+    SELECT c.*, 
+           ST_X(c.location::geometry) AS lng, 
+           ST_Y(c.location::geometry) AS lat,
+           d.name as department_name,
+           u_off.name as officer_name
+    FROM complaint_follows f
+    JOIN complaints c ON c.id = f.complaint_id
+    LEFT JOIN departments d ON d.id = c.department_id
+    LEFT JOIN users u_off ON u_off.id = c.officer_id
+    WHERE f.user_id = $1
+    ORDER BY f.created_at DESC
+    LIMIT $2 OFFSET $3
+  `;
+  const r = await db.query(q, [userId, limit, offset]);
+  return r.rows;
+}
+
+async function getComments(complaintId, currentUserId = null) {
+  const q = `
+    SELECT cm.id, cm.complaint_id, cm.user_id, cm.comment, cm.is_anonymous, cm.status, cm.created_at,
+           u.name as user_name, u.role as user_role, u.avatar_url as user_avatar, u.settings as user_settings
+    FROM complaint_comments cm
+    LEFT JOIN users u ON u.id = cm.user_id
+    WHERE cm.complaint_id = $1 AND (cm.status IS NULL OR cm.status != 'hidden')
+    ORDER BY cm.created_at ASC
+  `;
+  const r = await db.query(q, [complaintId]);
+  return r.rows.map(row => {
+    let settings = {};
+    try {
+      settings = typeof row.user_settings === 'string' ? JSON.parse(row.user_settings) : (row.user_settings || {});
+    } catch(e) { settings = {}; }
+
+    if (row.is_anonymous && row.user_id !== currentUserId) {
+      return {
+        id: row.id,
+        complaint_id: row.complaint_id,
+        user_id: null,
+        comment: row.comment,
+        is_anonymous: true,
+        status: row.status,
+        created_at: row.created_at,
+        user_name: 'Anonymous Citizen',
+        user_avatar: null,
+        user_role: 'citizen'
+      };
+    }
+
+    let displayName = row.user_name || 'Citizen';
+    if (row.user_role === 'citizen') {
+      if (settings.publicNickname && settings.publicNickname.trim()) {
+        displayName = settings.publicNickname.trim();
+      } else if (row.user_name) {
+        const parts = row.user_name.trim().split(' ');
+        displayName = parts.length > 1 ? `${parts[0]} ${parts[parts.length - 1][0]}.` : parts[0];
+      }
+    }
+
+    return {
+      id: row.id,
+      complaint_id: row.complaint_id,
+      user_id: row.user_id,
+      comment: row.comment,
+      is_anonymous: !!row.is_anonymous,
+      status: row.status || 'visible',
+      created_at: row.created_at,
+      user_name: displayName,
+      user_avatar: row.is_anonymous ? null : row.user_avatar,
+      user_role: row.user_role
+    };
+  });
+}
+
+async function addComment(complaintId, userId, comment, isAnonymous = false) {
+  // Strip HTML / script tags
+  const sanitizedComment = String(comment || '').replace(/<[^>]*>?/gm, '').trim();
+  const q = `
+    INSERT INTO complaint_comments (complaint_id, user_id, comment, is_anonymous, status, created_at)
+    VALUES ($1, $2, $3, $4, 'visible', now())
+    RETURNING *
+  `;
+  const r = await db.query(q, [complaintId, userId, sanitizedComment, isAnonymous]);
+  const userRes = await db.query('SELECT name, role, avatar_url, settings FROM users WHERE id=$1', [userId]);
+  const user = userRes.rows[0] || {};
+  let settings = {};
+  try {
+    settings = typeof user.settings === 'string' ? JSON.parse(user.settings) : (user.settings || {});
+  } catch(e) { settings = {}; }
+
+  let displayName = user.name || 'Citizen';
+  if (isAnonymous) {
+    displayName = 'Anonymous Citizen';
+  } else if (settings.publicNickname && settings.publicNickname.trim()) {
+    displayName = settings.publicNickname.trim();
+  }
+
+  return {
+    ...r.rows[0],
+    user_name: displayName,
+    user_role: user.role,
+    user_avatar: isAnonymous ? null : user.avatar_url
+  };
+}
+
+async function reportComment(commentId, reporterId, reason) {
+  const q = `
+    INSERT INTO comment_reports (comment_id, reporter_id, reason, status, created_at)
+    VALUES ($1, $2, $3, 'pending', now())
+    ON CONFLICT (comment_id, reporter_id) DO UPDATE SET reason = EXCLUDED.reason, created_at = now()
+    RETURNING *
+  `;
+  const r = await db.query(q, [commentId, reporterId, String(reason || 'Inappropriate content').trim()]);
+  return r.rows[0];
+}
+
+async function getCitizenActivity(userId, limit = 20) {
+  const q = `
+    (
+      SELECT 'complaint_created' as action_type, id as reference_id, title as title, category as meta, created_at, status as status
+      FROM complaints
+      WHERE user_id = $1
+    )
+    UNION ALL
+    (
+      SELECT 'complaint_voted' as action_type, c.id as reference_id, c.title as title, c.category as meta, v.created_at, c.status as status
+      FROM complaint_votes v
+      JOIN complaints c ON c.id = v.complaint_id
+      WHERE v.user_id = $1
+    )
+    UNION ALL
+    (
+      SELECT 'complaint_commented' as action_type, c.id as reference_id, c.title as title, cm.comment as meta, cm.created_at, c.status as status
+      FROM complaint_comments cm
+      JOIN complaints c ON c.id = cm.complaint_id
+      WHERE cm.user_id = $1
+    )
+    UNION ALL
+    (
+      SELECT 'complaint_followed' as action_type, c.id as reference_id, c.title as title, c.category as meta, f.created_at, c.status as status
+      FROM complaint_follows f
+      JOIN complaints c ON c.id = f.complaint_id
+      WHERE f.user_id = $1
+    )
+    UNION ALL
+    (
+      SELECT 'resolution_verified' as action_type, reference_id, 'Resolution Verified' as title, 'Earned +5 Contribution Points' as meta, created_at, 'closed' as status
+      FROM citizen_contribution_events
+      WHERE user_id = $1 AND event_type = 'RESOLUTION_VERIFIED'
+    )
+    ORDER BY created_at DESC
+    LIMIT $2
+  `;
+  const r = await db.query(q, [userId, limit]);
+  return r.rows;
+}
+
 module.exports = {
   createComplaint,
   addComplaintImage,
@@ -272,6 +741,16 @@ module.exports = {
   heatmapAggregation,
   bboxQuery,
   nearbyComplaints,
+  getOfficerDashboardStats,
   getTimeline,
-  addStatusHistory
+  addStatusHistory,
+  getComplaintVotes,
+  toggleVote,
+  getComplaintFollow,
+  toggleFollow,
+  listFollowedComplaints,
+  getComments,
+  addComment,
+  reportComment,
+  getCitizenActivity
 };
