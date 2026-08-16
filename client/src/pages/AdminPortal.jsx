@@ -3602,7 +3602,7 @@ export default function AdminPortal() {
           <button className="absolute top-4 right-4 text-white hover:text-slate-300 transition-colors" aria-label="Close photo preview">
             <X className="h-8 w-8" />
           </button>
-          <img src={selectedImg.startsWith('http') ? selectedImg : `${import.meta.env.VITE_API_BASE?.replace(/\/api$/, '')}${selectedImg.startsWith('/') ? '' : '/'}${selectedImg}`} alt="Enlarged view" className="max-h-full max-w-full rounded-lg object-contain shadow-2xl" />
+          <img src={selectedImg.startsWith('http') ? selectedImg : `${(import.meta.env.VITE_API_BASE || 'http://localhost:5000/api').replace(/\/api$/, '')}${selectedImg.startsWith('/') ? '' : '/'}${selectedImg}`} alt="Enlarged view" className="max-h-full max-w-full rounded-lg object-contain shadow-2xl" />
         </div>
       )}
 

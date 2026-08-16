@@ -12,9 +12,7 @@ export default class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, info) {
-    if (import.meta.env.DEV) {
-      console.error('[ErrorBoundary caught error]:', error, info)
-    }
+    console.error('[ErrorBoundary caught error]:', error, info)
     this.setState({ error, info })
   }
 

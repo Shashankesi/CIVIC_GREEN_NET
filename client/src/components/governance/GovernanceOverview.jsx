@@ -13,8 +13,8 @@ import ThemeContext from '../../context/ThemeContext'
 import Skeleton from '../Skeleton'
 
 export default function GovernanceOverview({ onNavigateTab, onOpenAiSummary }) {
-  const { theme } = useContext(ThemeContext)
-  const isDark = theme === 'dark'
+  const { dark } = useContext(ThemeContext)
+  const isDark = Boolean(dark)
 
   const [timeframe, setTimeframe] = useState('30d')
   const [customStart, setCustomStart] = useState('')

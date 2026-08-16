@@ -3,6 +3,11 @@ import React, {
 } from 'react'
 import { MapContainer, TileLayer, Marker, useMap, Circle, Popup, GeoJSON, useMapEvents } from 'react-leaflet'
 import L from 'leaflet'
+
+if (typeof window !== 'undefined' && !window.L) {
+  window.L = L
+}
+
 import 'leaflet.markercluster/dist/MarkerCluster.css'
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css'
 import 'leaflet.markercluster/dist/leaflet.markercluster.js'
@@ -268,9 +273,9 @@ export default function MapView({
   onComplaintClick = null,
   onStatsChange = null
 }) {
-  const { theme } = useContext(ThemeContext)
+  const { dark } = useContext(ThemeContext)
   const { user } = useContext(AuthContext)
-  const isDark = theme === 'dark'
+  const isDark = Boolean(dark)
   const role = user?.role || userRole || 'citizen'
   const isAdminOrOfficer = role === 'admin' || role === 'officer'
 
