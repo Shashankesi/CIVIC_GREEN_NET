@@ -135,8 +135,15 @@ export function RealtimeProvider({ children }) {
       es.close()
       eventSourceRef.current = null
 
-      // Exponential backoff reconnect: 2s, 4s, max 10s
-      const delay = Math.min(10000, Math.pow(2, reconnectAttemptsRef.current) * 1000 + 1000)
+      // Stop reconnecting after too many failures
+      const MAX_RECONNECT_ATTEMPTS = 15
+      if (reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
+        setStatus('offline')
+        return
+      }
+
+      // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s max
+      const delay = Math.min(30000, Math.pow(2, reconnectAttemptsRef.current) * 1000)
       reconnectAttemptsRef.current++
       reconnectTimeoutRef.current = setTimeout(() => {
         if (user) connect()

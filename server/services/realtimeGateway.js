@@ -51,7 +51,7 @@ function registerClient(user, res) {
   const userId = parseInt(user.id, 10);
   const clientId = nextClientId++;
 
-  // Set SSE response headers
+  // Set SSE response headers (writeHead merges with CORS headers set by middleware)
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache, no-transform',

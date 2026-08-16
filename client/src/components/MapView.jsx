@@ -24,7 +24,6 @@ import {
 import mapsApi from '../services/maps'
 import complaintsApi from '../services/complaints'
 import maptiler from '../services/maptiler'
-import { API_BASE, getTokens } from '../services/api'
 import {
   getTileConfig, STATUS_META, PRIORITY_META, CATEGORY_OPTIONS,
   STATUS_OPTIONS, PRIORITY_OPTIONS, RADIUS_OPTIONS, TIME_OPTIONS,
@@ -33,6 +32,7 @@ import {
 } from '../config/mapConfig'
 import ThemeContext from '../context/ThemeContext'
 import AuthContext from '../context/AuthContext'
+import { useRealtime } from '../context/RealtimeContext'
 
 // ─── Utilities ───────────────────────────────────────────────────────────────
 
@@ -275,6 +275,7 @@ export default function MapView({
 }) {
   const { dark } = useContext(ThemeContext)
   const { user } = useContext(AuthContext)
+  const { subscribe: realtimeSubscribe } = useRealtime()
   const isDark = Boolean(dark)
   const role = user?.role || userRole || 'citizen'
   const isAdminOrOfficer = role === 'admin' || role === 'officer'
@@ -396,29 +397,24 @@ export default function MapView({
     }
   }, [bbox, currentZoom, loadMapData])
 
-  // 3. Real-Time SSE Sync
+  // 3. Real-Time Sync via RealtimeContext (single managed SSE connection)
+  const bboxRef = useRef(bbox)
+  const zoomRef = useRef(currentZoom)
+  bboxRef.current = bbox
+  zoomRef.current = currentZoom
+
   useEffect(() => {
-    let es = null
-    try {
-      const token = getTokens()?.accessToken || localStorage.getItem('cgn_token')
-      const base = API_BASE
-      const url = `${base}/realtime/stream${token ? `?token=${encodeURIComponent(token)}` : ''}`
-      es = new EventSource(url)
-
-      es.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data)
-          if (data.type === 'COMPLAINT_CREATED' || data.type === 'COMPLAINT_STATUS_UPDATED') {
-            if (bbox) loadMapData(bbox, currentZoom)
-          }
-        } catch (e) {}
-      }
-    } catch (e) {}
-
+    const unsubCreate = realtimeSubscribe('COMPLAINT_CREATED', () => {
+      if (bboxRef.current) loadMapData(bboxRef.current, zoomRef.current)
+    })
+    const unsubUpdate = realtimeSubscribe('COMPLAINT_STATUS_UPDATED', () => {
+      if (bboxRef.current) loadMapData(bboxRef.current, zoomRef.current)
+    })
     return () => {
-      if (es) es.close()
+      unsubCreate()
+      unsubUpdate()
     }
-  }, [bbox, currentZoom, loadMapData])
+  }, [realtimeSubscribe, loadMapData])
 
   // 4. Geolocation handler
   const handleLocateMe = () => {

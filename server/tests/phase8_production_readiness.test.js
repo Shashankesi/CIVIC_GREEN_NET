@@ -144,25 +144,66 @@ describe('CIVIC GREENNET — PHASE 8 PRODUCTION READINESS & SECURITY', () => {
       expect(res.headers['referrer-policy']).toBe('strict-origin-when-cross-origin');
     });
 
-    test('CORS handles allowed origins and blocks untrusted cross-origin requests', async () => {
+    test('CORS allows localhost development origin', async () => {
       const validRes = await request(app)
         .get('/api/health')
         .set('Origin', 'http://localhost:5173');
       expect(validRes.status).toBe(200);
+      expect(validRes.headers['access-control-allow-origin']).toBe('http://localhost:5173');
+    });
 
+    test('CORS allows production origin (https://civicgreennet.onrender.com)', async () => {
+      const res = await request(app)
+        .get('/api/health')
+        .set('Origin', 'https://civicgreennet.onrender.com');
+      expect(res.status).toBe(200);
+      expect(res.headers['access-control-allow-origin']).toBe('https://civicgreennet.onrender.com');
+    });
+
+    test('CORS blocks untrusted cross-origin requests', async () => {
       const invalidRes = await request(app)
         .get('/api/health')
         .set('Origin', 'http://malicious-phishing-site.xyz');
       expect(invalidRes.headers['access-control-allow-origin']).not.toBe('http://malicious-phishing-site.xyz');
     });
 
-    test('CORS handles preflight OPTIONS request for production domain and exposed headers', async () => {
+    test('CORS handles preflight OPTIONS for /api/health', async () => {
       const optionsRes = await request(app)
         .options('/api/health')
         .set('Origin', 'http://localhost:5173')
         .set('Access-Control-Request-Method', 'GET');
       expect(optionsRes.status).toBe(200);
       expect(optionsRes.headers['access-control-allow-credentials']).toBe('true');
+    });
+
+    test('CORS handles preflight OPTIONS for /api/maps/complaints from production origin', async () => {
+      const res = await request(app)
+        .options('/api/maps/complaints')
+        .set('Origin', 'https://civicgreennet.onrender.com')
+        .set('Access-Control-Request-Method', 'GET')
+        .set('Access-Control-Request-Headers', 'Authorization,Content-Type');
+      expect(res.status).toBe(200);
+      expect(res.headers['access-control-allow-origin']).toBe('https://civicgreennet.onrender.com');
+      expect(res.headers['access-control-allow-credentials']).toBe('true');
+    });
+
+    test('CORS handles preflight OPTIONS for /api/maps/hotspots from production origin', async () => {
+      const res = await request(app)
+        .options('/api/maps/hotspots')
+        .set('Origin', 'https://civicgreennet.onrender.com')
+        .set('Access-Control-Request-Method', 'GET');
+      expect(res.status).toBe(200);
+      expect(res.headers['access-control-allow-origin']).toBe('https://civicgreennet.onrender.com');
+    });
+
+    test('CORS handles preflight OPTIONS for /api/realtime/stream from production origin', async () => {
+      const res = await request(app)
+        .options('/api/realtime/stream')
+        .set('Origin', 'https://civicgreennet.onrender.com')
+        .set('Access-Control-Request-Method', 'GET')
+        .set('Access-Control-Request-Headers', 'Last-Event-ID,Cache-Control');
+      expect(res.status).toBe(200);
+      expect(res.headers['access-control-allow-origin']).toBe('https://civicgreennet.onrender.com');
     });
 
     test('URL builder (buildFrontendUrl) generates valid URLs and supports query parameters', () => {

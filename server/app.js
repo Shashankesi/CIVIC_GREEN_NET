@@ -23,7 +23,11 @@ const errorHandler = require('./middleware/errorHandler');
 const app = express();
 app.disable('x-powered-by');
 app.disable('etag');
-// Production-grade security headers with Helmet (configured for maps, Cloudinary, and fonts)
+
+// ─── 1. Trust Proxy (Render runs behind a reverse proxy) ─────────────────────
+app.set('trust proxy', 1);
+
+// ─── 2. Security Headers (Helmet) ───────────────────────────────────────────
 app.use(
   helmet({
     contentSecurityPolicy: {
@@ -43,12 +47,13 @@ app.use(
   })
 );
 
-app.use(requestId);
-app.use(requestTimer);
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
+// ─── 3. CORS Configuration (MUST run before body parsers and routes) ─────────
 
-// Production vs Development CORS configuration
+// Known production origins (hardcoded fallback — always allowed)
+const KNOWN_PRODUCTION_ORIGINS = [
+  'https://civicgreennet.onrender.com'
+];
+
 const rawOrigins = [
   process.env.FRONTEND_URL,
   process.env.CLIENT_URL,
@@ -77,27 +82,40 @@ const devOrigins = [
   'http://127.0.0.1:3000'
 ];
 
-const allowedOrigins = NODE_ENV === 'production' && configuredOrigins.length > 0
-  ? Array.from(new Set(configuredOrigins))
-  : Array.from(new Set([...configuredOrigins, ...devOrigins]));
+// In production: configured origins + known production origins
+// In development: all of the above + dev origins
+const allowedOrigins = NODE_ENV === 'production'
+  ? Array.from(new Set([...KNOWN_PRODUCTION_ORIGINS, ...configuredOrigins]))
+  : Array.from(new Set([...KNOWN_PRODUCTION_ORIGINS, ...configuredOrigins, ...devOrigins]));
 
 const corsOptions = {
   origin: function (origin, callback) {
+    // Allow requests with no origin (server-to-server, curl, health checks)
     if (!origin || allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
     callback(new Error('Not allowed by CORS'));
   },
   methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID', 'X-Requested-With', 'Accept'],
+  allowedHeaders: [
+    'Content-Type', 'Authorization', 'X-Request-ID', 'X-Requested-With',
+    'Accept', 'Origin', 'Cache-Control', 'Last-Event-ID'
+  ],
   exposedHeaders: ['Content-Disposition', 'Content-Type', 'X-Request-ID'],
   credentials: true,
-  optionsSuccessStatus: 200
+  optionsSuccessStatus: 200,
+  maxAge: 86400 // Cache preflight for 24 hours
 };
 app.use(cors(corsOptions));
+
+// ─── 4. Request ID, Timing & Logging ────────────────────────────────────────
+app.use(requestId);
+app.use(requestTimer);
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
 app.use(morgan(NODE_ENV === 'production' ? 'combined' : 'dev'));
 
-// ─── Health Check & Root Diagnostics (Bypass Rate Limiting) ─────────────────
+// ─── 5. Health Check & Root Diagnostics (Bypass Rate Limiting) ──────────────
 const handleHealthCheck = async (req, res) => {
   try {
     const db = require('./config/db');
@@ -173,13 +191,15 @@ app.get('/api', (req, res) => {
   });
 });
 
-// ─── Rate Limiters for Sensitive & General API Routes ────────────────────────
+// ─── 6. Rate Limiters for Sensitive & General API Routes ────────────────────
 const generalLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute
   max: process.env.RATE_LIMIT_MAX ? parseInt(process.env.RATE_LIMIT_MAX, 10) : (NODE_ENV === 'production' ? 600 : 5000),
   standardHeaders: true,
   legacyHeaders: false,
   skip: (req) => {
+    // Skip health endpoints and preflight OPTIONS from rate limiting
+    if (req.method === 'OPTIONS') return true;
     return req.path === '/health' || req.path === '/api/health' || req.originalUrl === '/api/health' || req.originalUrl === '/health';
   },
   message: { success: false, message: 'Too many requests, please try again shortly.' }
@@ -201,7 +221,7 @@ app.use('/api/auth/forgot', authLimiter);
 // General API rate limiter for resource endpoints
 app.use('/api/', generalLimiter);
 
-// ─── API Resource Routes ─────────────────────────────────────────────────────
+// ─── 7. API Resource Routes ─────────────────────────────────────────────────
 app.use('/api', publicRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/complaints', complaintRoutes);
@@ -215,6 +235,7 @@ app.use('/api/maps', mapRoutes);
 app.use('/api/governance', governanceRoutes);
 app.use('/api/realtime', realtimeRoutes);
 
+// ─── 8. Error Handler ───────────────────────────────────────────────────────
 app.use(errorHandler);
 
 module.exports = app;
