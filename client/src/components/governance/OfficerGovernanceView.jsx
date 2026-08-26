@@ -36,9 +36,11 @@ export default function OfficerGovernanceView() {
     }
   }
 
-  const filteredOfficers = officers.filter(o =>
-    o.name.toLowerCase().includes(search.toLowerCase()) ||
-    o.departmentName.toLowerCase().includes(search.toLowerCase())
+  const list = Array.isArray(officers) ? officers : []
+  const filteredOfficers = list.filter(o =>
+    (o?.name || '').toLowerCase().includes((search || '').toLowerCase()) ||
+    (o?.departmentName || '').toLowerCase().includes((search || '').toLowerCase()) ||
+    (o?.email || '').toLowerCase().includes((search || '').toLowerCase())
   )
 
   return (

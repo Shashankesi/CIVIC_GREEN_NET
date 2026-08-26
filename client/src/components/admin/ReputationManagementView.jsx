@@ -65,11 +65,14 @@ export default function ReputationManagementView() {
     try {
       setLoading(true);
       const data = await reputationApi.getAdminRules();
-      setRules(data);
+      const ruleList = Array.isArray(data) ? data : (data?.rules || []);
+      setRules(ruleList);
       // Initialize edit state
       const initialEdits = {};
-      data.forEach(r => {
-        initialEdits[r.rule_key] = { points: r.points, is_active: r.is_active };
+      ruleList.forEach(r => {
+        if (r && r.rule_key) {
+          initialEdits[r.rule_key] = { points: r.points, is_active: r.is_active };
+        }
       });
       setRuleEdits(initialEdits);
     } catch (err) {

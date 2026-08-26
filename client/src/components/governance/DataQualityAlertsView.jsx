@@ -99,15 +99,15 @@ export default function DataQualityAlertsView() {
       <div className="card p-5 rounded-2xl space-y-4">
         <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">Active Rule-Based Governance Alerts</h3>
 
-        {alerts.length === 0 ? (
+        {(!Array.isArray(alerts) || alerts.length === 0) ? (
           <div className="p-8 text-center text-xs text-slate-400 font-semibold">
             ✓ No active operational alerts. All governance indicators within normal thresholds.
           </div>
         ) : (
           <div className="space-y-3">
-            {alerts.map(a => (
+            {alerts.map((a, i) => (
               <div
-                key={a.id}
+                key={a.id || i}
                 className={`p-4 rounded-2xl border flex items-start justify-between gap-3 text-xs ${
                   a.severity === 'critical'
                     ? 'bg-rose-50/70 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800 text-rose-900 dark:text-rose-200'
@@ -119,14 +119,14 @@ export default function DataQualityAlertsView() {
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="font-black uppercase tracking-wider text-[10px] px-2 py-0.5 rounded bg-white/80 dark:bg-slate-900/80 shadow-xs">
-                      {a.severity}
+                      {a.severity || 'INFO'}
                     </span>
-                    <strong className="text-sm">{a.title}</strong>
+                    <strong className="text-sm">{a.title || 'System Alert'}</strong>
                   </div>
-                  <p className="mt-1 text-xs opacity-90 leading-relaxed">{a.description}</p>
+                  <p className="mt-1 text-xs opacity-90 leading-relaxed">{a.description || ''}</p>
                 </div>
                 <div className="shrink-0 text-right font-black">
-                  <span className="text-lg">{a.metricValue}</span>
+                  <span className="text-lg">{a.metricValue != null ? a.metricValue : '—'}</span>
                   {a.thresholdValue != null && (
                     <span className="text-[10px] opacity-75 block">Threshold: {a.thresholdValue}</span>
                   )}

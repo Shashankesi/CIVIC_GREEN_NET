@@ -69,10 +69,16 @@ export default function OfficerApprovals({
     } finally {
       setActionLoading(false)
     }
-  }  const allList = React.useMemo(() => {
-    const combined = [...pendingOfficers, ...allOfficers]
+  }
+
+  const allList = React.useMemo(() => {
+    const pList = Array.isArray(pendingOfficers) ? pendingOfficers : []
+    const aList = Array.isArray(allOfficers) ? allOfficers : []
+    const combined = [...pList, ...aList]
     const map = new Map()
-    combined.forEach(o => map.set(o.id, o))
+    combined.forEach(o => {
+      if (o && o.id) map.set(o.id, o)
+    })
     return Array.from(map.values())
   }, [pendingOfficers, allOfficers])
 

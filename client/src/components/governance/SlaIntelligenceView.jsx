@@ -72,27 +72,31 @@ export default function SlaIntelligenceView() {
         <div className="card p-5 rounded-2xl space-y-4">
           <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">Department SLA Rankings</h3>
           <div className="space-y-2.5">
-            {slaData?.departmentRankings.map((d, i) => (
-              <div key={d.id} className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 flex items-center justify-between text-xs">
-                <div className="flex items-center gap-3">
-                  <span className={`h-6 w-6 rounded-full flex items-center justify-center font-black text-[11px] ${
-                    i === 0 ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-                  }`}>
-                    {i + 1}
-                  </span>
-                  <div>
-                    <span className="font-bold text-slate-800 dark:text-white block">{d.name}</span>
-                    <span className="text-[10px] text-slate-400">{d.total} total cases · {d.overdueActive} overdue</span>
+            {(!slaData?.departmentRankings || slaData.departmentRankings.length === 0) ? (
+              <div className="p-4 text-center text-xs text-slate-400">No department ranking data recorded.</div>
+            ) : (
+              (slaData?.departmentRankings || []).map((d, i) => (
+                <div key={d.id || i} className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-3">
+                    <span className={`h-6 w-6 rounded-full flex items-center justify-center font-black text-[11px] ${
+                      i === 0 ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                    }`}>
+                      {i + 1}
+                    </span>
+                    <div>
+                      <span className="font-bold text-slate-800 dark:text-white block">{d.name}</span>
+                      <span className="text-[10px] text-slate-400">{d.total || 0} total cases · {d.overdueActive || 0} overdue</span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className={`text-sm font-black ${(d.slaCompliance || 0) >= 90 ? 'text-emerald-600' : (d.slaCompliance || 0) >= 75 ? 'text-amber-600' : 'text-rose-600'}`}>
+                      {d.slaCompliance || 0}%
+                    </span>
+                    <span className="text-[10px] text-slate-400 block">compliance</span>
                   </div>
                 </div>
-                <div className="text-right">
-                  <span className={`text-sm font-black ${d.slaCompliance >= 90 ? 'text-emerald-600' : d.slaCompliance >= 75 ? 'text-amber-600' : 'text-rose-600'}`}>
-                    {d.slaCompliance}%
-                  </span>
-                  <span className="text-[10px] text-slate-400 block">compliance</span>
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
 
@@ -110,14 +114,22 @@ export default function SlaIntelligenceView() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-medium">
-                {slaData?.categoryBreaches.map(c => (
-                  <tr key={c.category} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                    <td className="py-2.5 font-bold capitalize text-slate-800 dark:text-slate-200">{c.category}</td>
-                    <td className="py-2.5 text-right text-slate-500">{c.total}</td>
-                    <td className="py-2.5 text-right text-rose-600 font-bold">{c.activeOverdue}</td>
-                    <td className="py-2.5 text-right font-bold text-emerald-600">{c.slaRate}%</td>
+                {(!slaData?.categoryBreaches || slaData.categoryBreaches.length === 0) ? (
+                  <tr>
+                    <td colSpan="4" className="py-4 text-center text-xs text-slate-400">
+                      No category breach records found.
+                    </td>
                   </tr>
-                ))}
+                ) : (
+                  (slaData?.categoryBreaches || []).map((c, i) => (
+                    <tr key={c.category || i} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                      <td className="py-2.5 font-bold capitalize text-slate-800 dark:text-slate-200">{c.category}</td>
+                      <td className="py-2.5 text-right text-slate-500">{c.total || 0}</td>
+                      <td className="py-2.5 text-right text-rose-600 font-bold">{c.activeOverdue || 0}</td>
+                      <td className="py-2.5 text-right font-bold text-emerald-600">{c.slaRate || 0}%</td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>

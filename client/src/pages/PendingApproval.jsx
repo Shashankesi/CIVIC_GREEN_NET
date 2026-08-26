@@ -39,9 +39,15 @@ export default function PendingApproval() {
           <Link to="/dashboard" className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800">
             Go to dashboard
           </Link>
-          <Link to="/logout" className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
+          <button
+            onClick={() => {
+              auth.logout()
+              window.location.href = '/login'
+            }}
+            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 transition-colors"
+          >
             Sign out
-          </Link>
+          </button>
         </div>
       </div>
     </AuthLayout>

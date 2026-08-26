@@ -35,6 +35,7 @@ import WardGovernanceView from '../components/governance/WardGovernanceView'
 import ReportCenterView from '../components/governance/ReportCenterView'
 import DataQualityAlertsView from '../components/governance/DataQualityAlertsView'
 import AIExecutiveSummaryModal from '../components/governance/AIExecutiveSummaryModal'
+import TabErrorBoundary from '../components/TabErrorBoundary'
 import PageHeader from '../ui/PageHeader'
 import DashboardCard from '../components/DashboardCard'
 import TrendChart from '../components/TrendChart'
@@ -2499,8 +2500,9 @@ export default function AdminPortal() {
 
   return (
     <AdminShell title={activeTabMeta.label} activeTab={tab} onTabClick={switchTab}>
-      {/* ── Overview (Municipal Governance Command Center) ────────────────────── */}
-      {tab === 'overview' && (
+      <TabErrorBoundary key={tab} tabName={activeTabMeta.label} onNavigateDefault={() => switchTab('overview')}>
+        {/* ── Overview (Municipal Governance Command Center) ────────────────────── */}
+        {tab === 'overview' && (
         <GovernanceOverview
           onNavigateTab={(targetTab, filters) => {
             const nextParams = { tab: targetTab, ...(filters || {}) }
@@ -3821,6 +3823,7 @@ export default function AdminPortal() {
       {tab === 'system-health' && (
         <SystemHealthView />
       )}
+      </TabErrorBoundary>
 
       {/* ── Complaint Detail Slide-over ──────────────────────────────────────── */}
       {selectedComplaint && (

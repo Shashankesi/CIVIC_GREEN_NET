@@ -54,16 +54,63 @@ export default function GovernanceOverview({ onNavigateTab, onOpenAiSummary }) {
         adminApi.getSystemHealth()
       ])
 
-      if (kpiRes.status === 'fulfilled') setKpis(kpiRes.value)
-      else throw new Error(kpiRes.reason?.message || 'Failed to load executive KPIs')
+      if (kpiRes.status === 'fulfilled' && kpiRes.value) {
+        setKpis(kpiRes.value)
+      } else {
+        setKpis({
+          total: 0,
+          open: 0,
+          inProgress: 0,
+          completed: 0,
+          overdue: 0,
+          assigned: 0,
+          reopened: 0,
+          rejected: 0,
+          critical: 0,
+          unassigned: 0,
+          dueSoon: 0,
+          resolutionRate: 0,
+          slaCompliance: 100,
+          avgResolutionHours: 0,
+          activeOfficers: 0,
+          pendingOfficerApprovals: 0
+        })
+        if (kpiRes.status === 'rejected') {
+          console.warn('Executive KPIs load notice:', kpiRes.reason?.message)
+        }
+      }
 
-      if (trendRes.status === 'fulfilled') setTrends(trendRes.value || [])
-      if (catRes.status === 'fulfilled') setCategories(catRes.value || [])
-      if (critRes.status === 'fulfilled') setCriticalOps(critRes.value || { criticalCases: [], totalCriticalActive: 0, overdueCriticalCount: 0 })
-      if (offRes.status === 'fulfilled') setOfficers(offRes.value || [])
-      if (wardRes.status === 'fulfilled') setWards(wardRes.value || [])
-      if (auditRes.status === 'fulfilled') setRecentAudits(auditRes.value?.logs || [])
-      if (healthRes.status === 'fulfilled') setSysHealth(healthRes.value || {})
+      if (trendRes.status === 'fulfilled' && Array.isArray(trendRes.value)) setTrends(trendRes.value)
+      else setTrends([])
+
+      if (catRes.status === 'fulfilled' && Array.isArray(catRes.value)) setCategories(catRes.value)
+      else setCategories([])
+
+      if (critRes.status === 'fulfilled' && critRes.value) {
+        setCriticalOps({
+          criticalCases: Array.isArray(critRes.value.criticalCases) ? critRes.value.criticalCases : [],
+          totalCriticalActive: critRes.value.totalCriticalActive || 0,
+          overdueCriticalCount: critRes.value.overdueCriticalCount || 0
+        })
+      } else {
+        setCriticalOps({ criticalCases: [], totalCriticalActive: 0, overdueCriticalCount: 0 })
+      }
+
+      if (offRes.status === 'fulfilled' && Array.isArray(offRes.value)) setOfficers(offRes.value)
+      else setOfficers([])
+
+      if (wardRes.status === 'fulfilled' && Array.isArray(wardRes.value)) setWards(wardRes.value)
+      else setWards([])
+
+      if (auditRes.status === 'fulfilled') {
+        const logs = auditRes.value?.logs || auditRes.value?.items || (Array.isArray(auditRes.value) ? auditRes.value : [])
+        setRecentAudits(Array.isArray(logs) ? logs : [])
+      } else {
+        setRecentAudits([])
+      }
+
+      if (healthRes.status === 'fulfilled' && healthRes.value) setSysHealth(healthRes.value)
+      else setSysHealth({})
     } catch (err) {
       console.error('Failed to load governance overview data:', err)
       setError(err.message || 'Unable to load municipal analytics.')
@@ -130,6 +177,27 @@ export default function GovernanceOverview({ onNavigateTab, onOpenAiSummary }) {
     } finally {
       setExporting(false)
     }
+  }
+
+  if (loading && !kpis) {
+    return (
+      <div className="space-y-5 animate-pulse">
+        <div className="h-32 rounded-xl bg-slate-200 dark:bg-slate-800" />
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="h-12 rounded-lg bg-slate-200 dark:bg-slate-800" />
+          ))}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="h-64 rounded-xl bg-slate-200 dark:bg-slate-800" />
+          <div className="lg:col-span-2 grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="h-28 rounded-xl bg-slate-200 dark:bg-slate-800" />
+            ))}
+          </div>
+        </div>
+      </div>
+    )
   }
 
   if (error && !kpis) {

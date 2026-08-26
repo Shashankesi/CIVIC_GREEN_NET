@@ -37,10 +37,11 @@ export default function DepartmentGovernanceView({ onNavigateToMap, onNavigateTo
     }
   }
 
-  const sortedAndFilteredDepts = departments
+  const deptList = Array.isArray(departments) ? departments : (departments?.items || [])
+  const sortedAndFilteredDepts = deptList
     .filter(d =>
-      d.name.toLowerCase().includes(search.toLowerCase()) ||
-      (d.code && d.code.toLowerCase().includes(search.toLowerCase()))
+      (d?.name || '').toLowerCase().includes((search || '').toLowerCase()) ||
+      (d?.code && String(d.code).toLowerCase().includes((search || '').toLowerCase()))
     )
     .sort((a, b) => {
       switch (sortBy) {
@@ -192,18 +193,18 @@ export default function DepartmentGovernanceView({ onNavigateToMap, onNavigateTo
             <div>
               <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">Assigned Officers</h4>
               <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
-                {deptWorkspace.officers.length === 0 ? (
+                {(!deptWorkspace.officers || deptWorkspace.officers.length === 0) ? (
                   <div className="text-xs text-slate-400 italic">No officers currently assigned to this department.</div>
                 ) : (
-                  deptWorkspace.officers.map(o => (
+                  (deptWorkspace.officers || []).map(o => (
                     <div key={o.id} className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 flex items-center justify-between text-xs">
                       <div>
                         <span className="font-bold text-slate-800 dark:text-white block">{o.name}</span>
                         <span className="text-[10px] text-slate-400">{o.email}</span>
                       </div>
                       <div className="text-right text-[11px]">
-                        <span className="text-slate-600 dark:text-slate-300 font-semibold block">{o.activeWorkload} active cases</span>
-                        <span className="text-emerald-600 font-bold">{o.resolutionRate}% res rate</span>
+                        <span className="text-slate-600 dark:text-slate-300 font-semibold block">{o.activeWorkload || 0} active cases</span>
+                        <span className="text-emerald-600 font-bold">{o.resolutionRate || 0}% res rate</span>
                       </div>
                     </div>
                   ))
@@ -212,7 +213,7 @@ export default function DepartmentGovernanceView({ onNavigateToMap, onNavigateTo
             </div>
 
             {/* Category Distribution inside Department */}
-            {deptWorkspace.categories && deptWorkspace.categories.length > 0 && (
+            {deptWorkspace.categories && Array.isArray(deptWorkspace.categories) && deptWorkspace.categories.length > 0 && (
               <div>
                 <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">Category Distribution</h4>
                 <div className="grid grid-cols-2 gap-2 text-xs">
@@ -230,7 +231,7 @@ export default function DepartmentGovernanceView({ onNavigateToMap, onNavigateTo
             <div>
               <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">Recent Department Cases</h4>
               <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1 text-xs">
-                {deptWorkspace.recentComplaints.slice(0, 5).map(c => (
+                {(Array.isArray(deptWorkspace.recentComplaints) ? deptWorkspace.recentComplaints : []).slice(0, 5).map(c => (
                   <div key={c.id} className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800/70 flex items-center justify-between">
                     <div>
                       <span className="font-black text-emerald-600 mr-2">{c.ticketId}</span>
