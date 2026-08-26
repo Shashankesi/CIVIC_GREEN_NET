@@ -403,6 +403,35 @@ const toolDefinitions = [
     }
   },
   {
+    name: 'getWardAnalytics',
+    description: 'Retrieve ward-level complaint breakdown, identifying which wards have the most unresolved complaints, SLA compliance, and top categories.',
+    parameters: { type: 'object', properties: {} },
+    roles: ['admin'],
+    handler: async () => {
+      try {
+        const wardAnalytics = require('../analytics/wardAnalytics');
+        const scorecards = await wardAnalytics.getWardScorecards({ timeframe: '30d' });
+        return scorecards.map(w => ({
+          wardId: w.id,
+          wardName: w.name,
+          wardNumber: w.wardNumber,
+          totalComplaints: w.totalComplaints,
+          open: w.open,
+          inProgress: w.inProgress,
+          unresolved: (w.open || 0) + (w.inProgress || 0),
+          resolved: w.resolved,
+          overdue: w.overdue,
+          critical: w.critical,
+          topCategory: w.topCategory,
+          resolutionRate: `${w.resolutionRate}%`,
+          slaCompliance: `${w.slaCompliance}%`
+        }));
+      } catch (err) {
+        return [];
+      }
+    }
+  },
+  {
     name: 'generateBriefing',
     description: 'Synthesize an executive briefing report for municipal leadership.',
     parameters: { type: 'object', properties: {} },

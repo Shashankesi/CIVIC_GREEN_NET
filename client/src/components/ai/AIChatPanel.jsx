@@ -79,7 +79,16 @@ export default function AIChatPanel({
       content: text,
       created_at: new Date().toISOString()
     };
-    setMessages((prev) => [...prev, tempUserMsg]);
+
+    // If retrying, remove the previous temp message if it had the same text
+    if (textToSend) {
+      setMessages((prev) => {
+        const filtered = prev.filter((m) => !String(m.id).startsWith('temp-'));
+        return [...filtered, tempUserMsg];
+      });
+    } else {
+      setMessages((prev) => [...prev, tempUserMsg]);
+    }
     setLoading(true);
 
     try {
@@ -101,8 +110,15 @@ export default function AIChatPanel({
       console.error('AI Chat send error:', err);
       if (err.response?.status === 429) {
         setErrorMessage('The AI assistant is temporarily busy. Please try again shortly.');
+      } else if (err.response?.status === 403) {
+        setErrorMessage('Access denied: You do not have permission to use this assistant.');
       } else {
-        setErrorMessage('Sorry, I couldn\'t retrieve your complaint information right now. Please try again in a moment.');
+        const serverMsg = err.response?.data?.message;
+        setErrorMessage(
+          serverMsg && !serverMsg.includes('internal') && !serverMsg.includes('stack')
+            ? serverMsg
+            : 'Sorry, I couldn\'t retrieve your information right now. Please try again in a moment.'
+        );
       }
     } finally {
       setLoading(false);

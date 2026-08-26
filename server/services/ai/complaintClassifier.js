@@ -171,10 +171,14 @@ You MUST respond with a valid JSON object containing EXACTLY:
 }`;
 
 /**
- * Classify a complaint with AI and fallback
+ * Classify a complaint with AI and fallback, synthesizing text description and visual evidence
  */
-async function classifyComplaint({ title, description, citizenCategory = null, location = null, address = null }) {
-  const combinedText = `Title: ${title || 'No title'}\nDescription: ${description || ''}\nSelected Category: ${citizenCategory || 'None'}\nAddress: ${address || 'None'}`;
+async function classifyComplaint({ title, description, citizenCategory = null, location = null, address = null, imageAnalysis = null }) {
+  let combinedText = `Title: ${title || 'No title'}\nDescription: ${description || ''}\nSelected Category: ${citizenCategory || 'None'}\nAddress: ${address || 'None'}`;
+
+  if (imageAnalysis && imageAnalysis.available) {
+    combinedText += `\n\nSupporting Visual Evidence (from image analysis):\nSummary: ${imageAnalysis.summary || 'None'}\nObservations: ${(imageAnalysis.observations || []).join(', ') || 'None'}\nSafety Concerns: ${(imageAnalysis.safetyConcerns || []).join(', ') || 'None'}\nVisible Damage: ${imageAnalysis.visibleDamage || 'None'}\nVisual Category: ${imageAnalysis.category || 'None'}\nVisual Severity: ${imageAnalysis.severity || 'None'}`;
+  }
 
   try {
     const aiResult = await executeStructuredAI({
@@ -187,12 +191,17 @@ async function classifyComplaint({ title, description, citizenCategory = null, l
     const normalized = normalizeClassification(aiResult.data, citizenCategory, combinedText);
     return {
       ...normalized,
+      imageAnalysis: imageAnalysis || null,
       modelUsed: aiResult.modelUsed,
       isCached: aiResult.isCached
     };
   } catch (err) {
     logger.warn(`[Classifier] AI failed, utilizing deterministic classifier: ${err.message}`);
-    return deterministicClassify(`${title} ${description}`, citizenCategory);
+    const fallback = deterministicClassify(`${title} ${description}`, citizenCategory);
+    return {
+      ...fallback,
+      imageAnalysis: imageAnalysis || null
+    };
   }
 }
 

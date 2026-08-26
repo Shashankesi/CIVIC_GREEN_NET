@@ -141,15 +141,39 @@ async function processUserMessage({ userId, role, conversationId, message, compl
     context: conv.context || {}
   };
 
-  // 7. Execute Chat Loop with Groq
-  const { message: aiResponse, updatedMessages } = await executeChatLoop({
-    messages: formattedMessages,
-    tools: formattedTools,
-    ctx
-  });
+  // 7. Execute Chat Loop with Groq (with graceful fallback on service interruption)
+  let aiResponse = null;
+  let updatedMessages = [];
+  let cards = [];
+
+  try {
+    const loopResult = await executeChatLoop({
+      messages: formattedMessages,
+      tools: formattedTools,
+      ctx
+    });
+    aiResponse = loopResult.message;
+    updatedMessages = loopResult.updatedMessages || [];
+    cards = extractComplaintCards(updatedMessages);
+  } catch (groqErr) {
+    const logger = require('../../utils/logger');
+    logger.warn('[AI Service] Groq chat loop encountered an issue, utilizing role fallback', {
+      error: groqErr.message,
+      role
+    });
+
+    if (role === 'admin') {
+      const { processAdminCopilotQuery } = require('./adminCopilot');
+      const copilotRes = await processAdminCopilotQuery(message.trim());
+      aiResponse = { content: copilotRes.explanation };
+    } else {
+      aiResponse = {
+        content: `I am currently analyzing live municipal records. ${groqErr.message.includes('API key') ? 'AI service is operating in local mode.' : 'Please try asking your question again.'}`
+      };
+    }
+  }
 
   // 8. Extract cards & update context entity memory
-  const cards = extractComplaintCards(updatedMessages);
   if (cards.length > 0) {
     const updatedContext = {
       ...(conv.context || {}),

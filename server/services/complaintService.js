@@ -20,7 +20,31 @@ async function createComplaint(payload, files = []) {
   else if (prioLower === 'low')    hours = 168; // 7 days
   const sla_due_at = new Date(Date.now() + hours * 60 * 60 * 1000);
 
-  // 2. Perform AI Classification
+  // 2. Perform Image Analysis (Gemini Vision) & AI Classification
+  let imageAnalysis = null;
+  if (files && files.length > 0) {
+    try {
+      const { analyzeComplaintImage } = require('./ai/imageAnalyzer');
+      imageAnalysis = await analyzeComplaintImage(files[0], {
+        title,
+        description,
+        category: citizenCategory
+      });
+      if (imageAnalysis && imageAnalysis.available) {
+        logger.info('[Complaint Service] Gemini image analysis completed successfully', {
+          category: imageAnalysis.category,
+          severity: imageAnalysis.severity,
+          confidence: imageAnalysis.confidence
+        });
+      }
+    } catch (visionErr) {
+      logger.warn('[Complaint Service] Gemini vision analysis error (continuing with text processing):', {
+        err: visionErr.message
+      });
+      imageAnalysis = { available: false, error: visionErr.message };
+    }
+  }
+
   let classification = null;
   try {
     realtimeGateway.publishAiEvent('AI_ANALYSIS_STARTED', { 
@@ -33,7 +57,8 @@ async function createComplaint(payload, files = []) {
       description,
       citizenCategory,
       address,
-      location
+      location,
+      imageAnalysis
     });
   } catch (aiErr) {
     logger.warn('[Complaint Service] AI classification failed, using fallback:', { err: aiErr.message });
