@@ -400,10 +400,14 @@ function AdminCaseWorkspace({ complaintId, onBack, officers: initialOfficers = [
   async function handleApplyChanges(overrideStatus, overrideDept, overrideOfficer, overridePriority) {
     setSaving(true);
     try {
-      const targetSt = overrideStatus || status;
       const targetDept = overrideDept !== undefined ? overrideDept : departmentId;
       const targetOfficer = overrideOfficer !== undefined ? overrideOfficer : officerId;
       const targetPriority = overridePriority || priority;
+
+      let targetSt = overrideStatus || status;
+      if (targetOfficer && (targetSt === 'open' || targetSt === 'pending' || !targetSt)) {
+        targetSt = 'assigned';
+      }
 
       const fields = {
         status: targetSt,

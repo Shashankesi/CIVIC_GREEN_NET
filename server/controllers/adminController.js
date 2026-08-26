@@ -312,24 +312,30 @@ async function updateComplaint(req, res) {
       });
     }
 
-    const allowed = ['status', 'priority', 'severity', 'department_id', 'officer_id'];
+    const allowed = ['priority', 'severity'];
     const fields = {};
     allowed.forEach((k) => {
       if (req.body[k] !== undefined) fields[k] = req.body[k] || null;
     });
 
-    // If explicit non-assigned status transition was requested
-    if (fields.status && fields.status !== 'assigned') {
-      const timelineService = require('../services/timelineService');
+    if (Object.keys(fields).length > 0) {
+      await adminComplaintRepo.updateComplaintAdmin(id, fields);
+    }
+
+    // Process explicit status override if requested and not stale 'open'/'assigned' default
+    const requestedStatus = req.body.status;
+    if (requestedStatus && requestedStatus !== 'assigned') {
       const comp = await adminComplaintRepo.getComplaintById(id);
-      if (comp && comp.status !== fields.status) {
-        await timelineService.changeStatus(id, fields.status, getUserId(req), req.body.note || 'Status updated by administrator');
+      const isStaleOpenAfterAssign = hasAssignmentChanges && requestedStatus === 'open' && comp && comp.status === 'assigned';
+      if (!isStaleOpenAfterAssign && comp && comp.status !== requestedStatus) {
+        const timelineService = require('../services/timelineService');
+        await timelineService.changeStatus(id, requestedStatus, getUserId(req), req.body.note || 'Status updated by administrator');
       }
     }
 
     const data = await adminComplaintRepo.getComplaintById(id);
     if (!data) return error(res, 'Complaint not found', 404);
-    await auditLogger.log(req, 'complaint_update', id, 'complaint', fields);
+    await auditLogger.log(req, 'complaint_update', id, 'complaint', { ...fields, status: data.status, officer_id: data.officer_id, department_id: data.department_id });
     return success(res, data, 'Complaint updated');
   } catch (err) {
     return handleServiceError(res, err);
