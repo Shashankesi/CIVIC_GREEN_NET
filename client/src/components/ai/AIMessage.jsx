@@ -28,7 +28,62 @@ export default function AIMessage({ message, accentColor = 'emerald', onFeedback
     }
   };
 
-  // Helper to parse markdown headings, bold text, and CGN badges cleanly
+  /**
+   * Parse inline markdown tokens: bold (**text**), italics (*text*), and CGN complaint badges
+   */
+  const parseInlineMarkdown = (text) => {
+    if (!text) return null;
+
+    // Tokenize text for bold (**...**), italics (*...*), and CGN complaint IDs (#?CGN-\d+)
+    const tokenRegex = /(\*\*[^*]+\*\*|\*[^*]+\*|#?CGN-\d{3,6})/gi;
+    const parts = text.split(tokenRegex);
+
+    return parts.map((part, pIdx) => {
+      if (!part) return null;
+
+      // Bold **text**
+      if (part.startsWith('**') && part.endsWith('**') && part.length >= 4) {
+        const innerText = part.slice(2, -2);
+        return (
+          <strong key={pIdx} className="font-bold text-slate-50">
+            {innerText}
+          </strong>
+        );
+      }
+
+      // Italic *text*
+      if (part.startsWith('*') && part.endsWith('*') && part.length >= 2) {
+        const innerText = part.slice(1, -1);
+        return (
+          <em key={pIdx} className="italic text-slate-300">
+            {innerText}
+          </em>
+        );
+      }
+
+      // CGN ID button
+      if (part.match(/^#?CGN-\d{3,6}$/i)) {
+        const numId = parseInt(part.replace(/[^0-9]/g, ''), 10);
+        return (
+          <button
+            key={pIdx}
+            onClick={() => navigate(`/complaints/${numId}`)}
+            className="inline-flex items-center gap-1 mx-1 px-2 py-0.5 rounded text-xs font-bold bg-cyan-950 text-cyan-300 border border-cyan-700/70 hover:bg-cyan-900 transition shadow-sm"
+            title={`View Complaint details ${part}`}
+          >
+            <span>{part.startsWith('#') ? part : `#${part}`}</span>
+            <ExternalLink className="w-3 h-3" />
+          </button>
+        );
+      }
+
+      return part;
+    });
+  };
+
+  /**
+   * Helper to parse markdown headings, bold text, bullet lists, and paragraphs cleanly
+   */
   const renderFormattedMarkdown = (text) => {
     if (!text) return null;
     const lines = text.split('\n');
@@ -38,55 +93,32 @@ export default function AIMessage({ message, accentColor = 'emerald', onFeedback
 
       // Heading 3 ###
       if (trimmed.startsWith('### ')) {
+        const headerContent = trimmed.replace(/^###\s+/, '');
         return (
           <h3 key={idx} className="font-bold text-sm sm:text-base text-slate-100 mt-3 mb-1.5 flex items-center gap-1.5">
             <span className="w-1.5 h-3.5 bg-cyan-400 rounded-full inline-block"></span>
-            {trimmed.replace(/^###\s+/, '')}
+            {parseInlineMarkdown(headerContent)}
           </h3>
         );
       }
 
       // Heading 2 ##
       if (trimmed.startsWith('## ')) {
+        const headerContent = trimmed.replace(/^##\s+/, '');
         return (
           <h2 key={idx} className="font-extrabold text-base text-slate-50 mt-3.5 mb-2 border-b border-slate-700/60 pb-1">
-            {trimmed.replace(/^##\s+/, '')}
+            {parseInlineMarkdown(headerContent)}
           </h2>
         );
       }
 
-      // Bullet lists (- or •)
-      const isBullet = trimmed.startsWith('- ') || trimmed.startsWith('• ');
+      // Bullet lists (- or • or * )
+      const isBullet = trimmed.startsWith('- ') || trimmed.startsWith('• ') || trimmed.startsWith('* ');
       if (isBullet) {
-        trimmed = trimmed.replace(/^[-•]\s+/, '');
-      }
-
-      // Parse inline bold and CGN-XXXXX buttons
-      const cgnRegex = /(#?CGN-\d{3,6})/gi;
-      const parts = trimmed.split(cgnRegex);
-
-      const parsedLine = parts.map((part, pIdx) => {
-        if (part.match(cgnRegex)) {
-          const numId = parseInt(part.replace(/[^0-9]/g, ''), 10);
-          return (
-            <button
-              key={pIdx}
-              onClick={() => navigate(`/complaints/${numId}`)}
-              className="inline-flex items-center gap-1 mx-1 px-2 py-0.5 rounded text-xs font-bold bg-cyan-950 text-cyan-300 border border-cyan-700/70 hover:bg-cyan-900 transition shadow-sm"
-              title={`View Complaint details ${part}`}
-            >
-              <span>{part.startsWith('#') ? part : `#${part}`}</span>
-              <ExternalLink className="w-3 h-3" />
-            </button>
-          );
-        }
-        return part;
-      });
-
-      if (isBullet) {
+        trimmed = trimmed.replace(/^[-•*]\s+/, '');
         return (
           <li key={idx} className="ml-4 list-disc text-slate-200 my-1 leading-relaxed">
-            {parsedLine}
+            {parseInlineMarkdown(trimmed)}
           </li>
         );
       }
@@ -97,7 +129,7 @@ export default function AIMessage({ message, accentColor = 'emerald', onFeedback
 
       return (
         <p key={idx} className="mb-1.5 last:mb-0 leading-relaxed text-slate-200">
-          {parsedLine}
+          {parseInlineMarkdown(trimmed)}
         </p>
       );
     });

@@ -1,25 +1,25 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, Cpu, BarChart2 } from 'lucide-react';
-import AIChatPanel from './AIChatPanel';
+import { Sparkles, Cpu } from 'lucide-react';
+import CitizenCopilot from './CitizenCopilot';
+import OfficerCopilot from './OfficerCopilot';
+import GovernanceCopilot from './GovernanceCopilot';
 
 const PERSONA_CONFIGS = {
   citizen: {
-    title: 'Civic GreenNet Assistant',
-    subtitle: 'Track complaints & municipal guidance',
+    title: 'Civic Assistant',
+    subtitle: 'Your complaints, civic services & community impact',
     label: 'Ask Civic AI',
     icon: Sparkles,
-    accentColor: 'emerald',
     badgeBg: 'bg-emerald-600 hover:bg-emerald-500',
     glowColor: 'shadow-emerald-500/25',
     useOfficerStyle: false
   },
   officer: {
     title: 'Officer Copilot',
-    subtitle: 'Assigned tasks & SLA operations',
+    subtitle: 'Your assignments, SLA & field operations',
     label: 'Officer Copilot',
     icon: Cpu,
-    accentColor: 'brand',
     badgeBg: '',
     glowColor: '',
     useOfficerStyle: true
@@ -29,7 +29,6 @@ const PERSONA_CONFIGS = {
     subtitle: 'City operations & SLA intelligence',
     label: 'Governance Copilot',
     icon: Sparkles,
-    accentColor: 'emerald',
     badgeBg: 'bg-slate-900 hover:bg-slate-800 text-white border border-slate-700/80 shadow-md dark:bg-[#0B1628] dark:hover:bg-[#111C2D] dark:border-emerald-600/40',
     glowColor: '',
     useOfficerStyle: false
@@ -40,6 +39,34 @@ export default function AIChatButton({ persona = 'citizen', complaintId = null }
   const [isOpen, setIsOpen] = useState(false);
   const cfg = PERSONA_CONFIGS[persona] || PERSONA_CONFIGS.citizen;
   const Icon = cfg.icon;
+
+  const renderRoleCopilot = () => {
+    if (persona === 'officer') {
+      return (
+        <OfficerCopilot
+          isOpen={isOpen}
+          onClose={() => setIsOpen(false)}
+          complaintId={complaintId}
+        />
+      );
+    }
+    if (persona === 'admin') {
+      return (
+        <GovernanceCopilot
+          isOpen={isOpen}
+          onClose={() => setIsOpen(false)}
+          complaintId={complaintId}
+        />
+      );
+    }
+    return (
+      <CitizenCopilot
+        isOpen={isOpen}
+        onClose={() => setIsOpen(false)}
+        complaintId={complaintId}
+      />
+    );
+  };
 
   return (
     <>
@@ -66,18 +93,8 @@ export default function AIChatButton({ persona = 'citizen', complaintId = null }
         )}
       </AnimatePresence>
 
-      {/* Floating Chat Drawer Window */}
-      {isOpen && (
-        <AIChatPanel
-          persona={persona}
-          title={cfg.title}
-          subtitle={cfg.subtitle}
-          accentColor={cfg.accentColor}
-          complaintId={complaintId}
-          isOpen={isOpen}
-          onClose={() => setIsOpen(false)}
-        />
-      )}
+      {/* Role-Specific Copilot Drawer Window */}
+      {isOpen && renderRoleCopilot()}
     </>
   );
 }

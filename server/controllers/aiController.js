@@ -22,11 +22,11 @@ const complaintRepo = require('../repositories/complaintRepository');
 const logger = require('../utils/logger');
 
 /**
- * Handle AI chat interaction (Preserved from earlier phase)
+ * Handle AI chat interaction (Routes securely based on authenticated req.user.role)
  */
 async function chat(req, res) {
   try {
-    const userId = req.user.userId;
+    const userId = req.user.userId || req.user.id;
     const role = req.user.role || 'citizen';
     const { conversationId, message, complaintId } = req.body;
 
@@ -46,6 +46,87 @@ async function chat(req, res) {
   } catch (err) {
     logger.error('[AI Controller Chat Error]', err);
     return error(res, err.message || 'Failed to process AI chat request', 500);
+  }
+}
+
+/**
+ * Dedicated Citizen Copilot Chat Handler
+ */
+async function citizenChat(req, res) {
+  try {
+    const userId = req.user.userId || req.user.id;
+    const { conversationId, message, complaintId } = req.body;
+
+    if (!message || typeof message !== 'string' || !message.trim()) {
+      return error(res, 'Message text is required', 400);
+    }
+
+    const result = await aiService.processUserMessage({
+      userId,
+      role: 'citizen',
+      conversationId: conversationId ? parseInt(conversationId, 10) : null,
+      message: message.trim(),
+      complaintContextId: complaintId || null
+    });
+
+    return success(res, result, 'Citizen assistant response processed');
+  } catch (err) {
+    logger.error('[Citizen Chat Controller Error]', err);
+    return error(res, err.message || 'Failed to process citizen request', 500);
+  }
+}
+
+/**
+ * Dedicated Officer Copilot Chat Handler
+ */
+async function officerChat(req, res) {
+  try {
+    const userId = req.user.userId || req.user.id;
+    const { conversationId, message, complaintId } = req.body;
+
+    if (!message || typeof message !== 'string' || !message.trim()) {
+      return error(res, 'Message text is required', 400);
+    }
+
+    const result = await aiService.processUserMessage({
+      userId,
+      role: 'officer',
+      conversationId: conversationId ? parseInt(conversationId, 10) : null,
+      message: message.trim(),
+      complaintContextId: complaintId || null
+    });
+
+    return success(res, result, 'Officer copilot response processed');
+  } catch (err) {
+    logger.error('[Officer Chat Controller Error]', err);
+    return error(res, err.message || 'Failed to process officer request', 500);
+  }
+}
+
+/**
+ * Dedicated Admin Governance Copilot Chat Handler
+ */
+async function adminChat(req, res) {
+  try {
+    const userId = req.user.userId || req.user.id;
+    const { conversationId, message, complaintId } = req.body;
+
+    if (!message || typeof message !== 'string' || !message.trim()) {
+      return error(res, 'Message text is required', 400);
+    }
+
+    const result = await aiService.processUserMessage({
+      userId,
+      role: 'admin',
+      conversationId: conversationId ? parseInt(conversationId, 10) : null,
+      message: message.trim(),
+      complaintContextId: complaintId || null
+    });
+
+    return success(res, result, 'Governance copilot response processed');
+  } catch (err) {
+    logger.error('[Admin Chat Controller Error]', err);
+    return error(res, err.message || 'Failed to process admin request', 500);
   }
 }
 
@@ -463,6 +544,9 @@ async function healthCheck(req, res) {
 
 module.exports = {
   chat,
+  citizenChat,
+  officerChat,
+  adminChat,
   getComplaintAnalysis,
   classifyComplaintEndpoint,
   overrideAiRecommendation,

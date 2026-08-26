@@ -1,7 +1,7 @@
 import React from 'react';
 import AppShell from '../components/AppShell';
 import PageHeader from '../ui/PageHeader';
-import AIChatPanel from '../components/ai/AIChatPanel';
+import OfficerCopilot from '../components/ai/OfficerCopilot';
 
 export default function OfficerAI() {
   return (
@@ -12,11 +12,7 @@ export default function OfficerAI() {
       />
 
       <div className="mt-4">
-        <AIChatPanel
-          persona="officer"
-          title="Officer Operations Copilot"
-          subtitle="Real-time Groq Multi-Tool Intelligence"
-          accentColor="brand"
+        <OfficerCopilot
           isOpen={true}
           fullPage={true}
         />

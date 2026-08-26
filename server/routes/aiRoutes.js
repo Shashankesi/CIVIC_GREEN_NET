@@ -7,10 +7,21 @@ const aiController = require('../controllers/aiController');
 router.use(authenticate);
 
 // ==========================================
-// 1. Citizen & Shared AI Assistant Routes
+// 1. Dedicated Role Copilot Routes (Strict RBAC)
 // ==========================================
-router.post('/chat', aiController.chat);
+
+// Citizen Copilot
+router.post('/citizen/chat', authorize(['citizen']), aiController.citizenChat);
 router.post('/citizen/assist', aiController.assistCitizen);
+
+// Officer Copilot
+router.post('/officer/chat', authorize(['officer']), aiController.officerChat);
+
+// Admin Governance Copilot
+router.post('/admin/chat', authorize(['admin']), aiController.adminChat);
+
+// Shared/Legacy Copilot Chat Endpoint (routes securely based on authenticated req.user.role)
+router.post('/chat', aiController.chat);
 
 // Conversation management
 router.get('/conversations', aiController.listConversations);

@@ -2,16 +2,33 @@ const db = require('../../config/db');
 const complaintRepo = require('../../repositories/complaintRepository');
 const assignmentRepo = require('../../repositories/assignmentRepository');
 const adminAnalyticsRepo = require('../../repositories/adminAnalyticsRepository');
-const adminDeptRepo = require('../../repositories/adminDepartmentRepository');
+const pointService = require('../pointService');
+const logger = require('../../utils/logger');
 
 /**
- * Definitions and handlers for all role-scoped AI tools.
- * Sanitizes outputs to protect security and prevent internal leakage.
+ * Format and sanitize a complaint record into a clean, safe payload
  */
-
 function sanitizeComplaint(c) {
   if (!c) return null;
   const numId = typeof c.id === 'number' ? c.id : parseInt(String(c.id).replace(/[^0-9]/g, ''), 10);
+  const now = new Date();
+  const slaDate = c.sla_due_at ? new Date(c.sla_due_at) : null;
+  const isOverdue = !!(slaDate && slaDate < now && !['resolved', 'closed'].includes(c.status));
+
+  let hoursRemaining = null;
+  let hoursOverdue = null;
+  if (slaDate) {
+    const diffHours = (slaDate - now) / (1000 * 60 * 60);
+    if (diffHours < 0) {
+      hoursOverdue = Math.round(Math.abs(diffHours));
+    } else {
+      hoursRemaining = Math.round(diffHours * 10) / 10;
+    }
+  }
+
+  const createdAt = c.created_at ? new Date(c.created_at) : null;
+  const ageHours = createdAt ? Math.round((now - createdAt) / (1000 * 60 * 60)) : 0;
+
   return {
     id: `CGN-${String(numId).padStart(5, '0')}`,
     rawId: numId,
@@ -20,469 +37,520 @@ function sanitizeComplaint(c) {
     status: c.status || 'open',
     category: c.category || 'general',
     priority: c.priority || 'medium',
-    severity: c.severity || null,
+    severity: c.severity || 'moderate',
     address: c.address || null,
-    location: c.lat && c.lng ? { lat: c.lat, lng: c.lng } : null,
+    location: c.lat && c.lng ? { lat: parseFloat(c.lat), lng: parseFloat(c.lng) } : null,
     created_at: c.created_at || null,
     sla_due_at: c.sla_due_at || null,
-    isOverdue: c.sla_due_at ? new Date(c.sla_due_at) < new Date() : false
+    isOverdue,
+    hoursRemaining,
+    hoursOverdue,
+    ageHours,
+    department_id: c.department_id || null,
+    department_name: c.department_name || null,
+    assigned_officer_name: c.assigned_officer_name || null
   };
 }
 
-const toolDefinitions = [
-  // ==========================================
-  // CITIZEN TOOLS
-  // ==========================================
-  {
-    name: 'getMyComplaints',
-    description: 'Retrieve complaints submitted by the currently logged-in citizen.',
-    parameters: {
-      type: 'object',
-      properties: {
-        status: { type: 'string', enum: ['open', 'in_progress', 'resolved', 'closed', 'reopened'] },
-        limit: { type: 'integer', default: 10 }
-      }
-    },
-    roles: ['citizen'],
-    handler: async ({ status, limit = 10 }, ctx) => {
-      const result = await complaintRepo.listComplaints({
-        limit: Math.min(limit, 20),
-        offset: 0,
-        filters: { userId: ctx.userId, ...(status ? { status } : {}) }
-      });
-      return result.map(sanitizeComplaint);
-    }
-  },
-  {
-    name: 'getComplaintById',
-    description: 'Get full details of a specific complaint by ID (e.g. CGN-00042 or 42).',
-    parameters: {
-      type: 'object',
-      properties: {
-        complaintId: { type: 'string', description: 'The complaint ID (numeric or formatted as CGN-XXXXX)' }
-      },
-      required: ['complaintId']
-    },
-    roles: ['citizen', 'officer', 'admin'],
-    handler: async ({ complaintId }, ctx) => {
-      const rawId = parseInt(String(complaintId).replace(/[^0-9]/g, ''), 10);
-      if (isNaN(rawId)) return { error: 'Invalid complaint ID format' };
+/**
+ * Smart Deterministic Priority Scoring
+ * Calculates an authoritative priority score based on severity, SLA, age, and safety weight.
+ * Output is 100% deterministic (no LLM hallucinations).
+ */
+function calculateComplaintPriority(complaint) {
+  const sanitized = sanitizeComplaint(complaint);
+  if (!sanitized) {
+    return { score: 0, severity: 'moderate', slaRisk: 'none', overdue: false, ageHours: 0, reasons: [] };
+  }
 
-      const c = await complaintRepo.getById(rawId);
-      if (!c) return { error: 'Complaint not found' };
+  let score = 0;
+  const reasons = [];
 
-      if (ctx.role === 'citizen' && c.user_id !== ctx.userId) {
-        return { error: 'Access denied: You can only view your own complaints.' };
-      }
+  // 1. Severity Weight (up to 40 pts)
+  const sev = (sanitized.severity || '').toLowerCase();
+  const prio = (sanitized.priority || '').toLowerCase();
+  if (sev === 'critical' || prio === 'critical') {
+    score += 40;
+    reasons.push('Critical severity defect requiring urgent attention');
+  } else if (sev === 'major' || prio === 'urgent' || prio === 'high') {
+    score += 30;
+    reasons.push('High priority / major impact issue');
+  } else if (sev === 'moderate' || prio === 'medium') {
+    score += 15;
+  } else {
+    score += 5;
+  }
 
-      return sanitizeComplaint(c);
-    }
-  },
-  {
-    name: 'getComplaintTimeline',
-    description: 'Get status change history and timeline for a complaint.',
-    parameters: {
-      type: 'object',
-      properties: {
-        complaintId: { type: 'string' }
-      },
-      required: ['complaintId']
-    },
-    roles: ['citizen', 'officer', 'admin'],
-    handler: async ({ complaintId }, ctx) => {
-      const rawId = parseInt(String(complaintId).replace(/[^0-9]/g, ''), 10);
-      if (isNaN(rawId)) return { error: 'Invalid complaint ID format' };
-
-      const c = await complaintRepo.getById(rawId);
-      if (!c) return { error: 'Complaint not found' };
-      if (ctx.role === 'citizen' && c.user_id !== ctx.userId) {
-        return { error: 'Access denied.' };
-      }
-
-      const timeline = await complaintRepo.getTimeline(rawId);
-      return {
-        complaintId: `CGN-${String(rawId).padStart(5, '0')}`,
-        history: timeline.history.map(h => ({
-          from: h.status_from,
-          to: h.status_to,
-          changedBy: h.changed_by_name || 'System',
-          note: h.note,
-          date: h.created_at
-        }))
-      };
-    }
-  },
-  {
-    name: 'getNearbyComplaints',
-    description: 'Find active public complaints near a specific location or latitude/longitude.',
-    parameters: {
-      type: 'object',
-      properties: {
-        lat: { type: 'number' },
-        lng: { type: 'number' },
-        radiusMeters: { type: 'number', default: 2000 }
-      },
-      required: ['lat', 'lng']
-    },
-    roles: ['citizen', 'officer', 'admin'],
-    handler: async ({ lat, lng, radiusMeters = 2000 }) => {
-      const complaints = await complaintRepo.nearbyComplaints(lat, lng, radiusMeters);
-      return complaints.slice(0, 10).map(c => ({
-        ...sanitizeComplaint(c),
-        distanceMeters: Math.round(c.distance || 0)
-      }));
-    }
-  },
-  {
-    name: 'searchMyComplaints',
-    description: 'Search through citizen complaints by keyword.',
-    parameters: {
-      type: 'object',
-      properties: {
-        query: { type: 'string' }
-      },
-      required: ['query']
-    },
-    roles: ['citizen'],
-    handler: async ({ query }, ctx) => {
-      const results = await complaintRepo.searchComplaints({ query, userId: ctx.userId, limit: 10 });
-      return results.map(sanitizeComplaint);
-    }
-  },
-  {
-    name: 'getCivicHelp',
-    description: 'Get official guidelines and resolution timelines for municipal issues.',
-    parameters: {
-      type: 'object',
-      properties: {
-        category: { type: 'string', description: 'e.g. sanitation, roads, lighting, utilities' }
-      }
-    },
-    roles: ['citizen', 'officer', 'admin'],
-    handler: async ({ category }) => {
-      const catHelp = {
-        sanitation: 'Sanitation issues (garbage accumulation, missed collection) are typically reviewed within 24 hours and addressed within 48 hours.',
-        roads: 'Potholes and road damage are inspected within 2 days. Minor repairs are scheduled within 5-7 business days.',
-        lighting: 'Streetlight outages and electrical faults are prioritized for emergency repair within 24-48 hours.',
-        utilities: 'Water main leaks and sewage backups receive top-priority SLA response within 4-12 hours.',
-        parks: 'Park maintenance and tree trimming requests are evaluated within 3 business days.'
-      };
-      return {
-        category: category || 'general',
-        guideline: catHelp[category?.toLowerCase()] || 'Civic GreenNet processes complaints based on severity and SLA priorities. High-priority items are routed directly to department officers.'
-      };
-    }
-  },
-
-  // ==========================================
-  // OFFICER TOOLS
-  // ==========================================
-  {
-    name: 'getMyAssignedComplaints',
-    description: 'Retrieve complaints assigned to the logged-in officer.',
-    parameters: {
-      type: 'object',
-      properties: {
-        status: { type: 'string', enum: ['open', 'in_progress', 'resolved', 'overdue'] },
-        priority: { type: 'string', enum: ['low', 'medium', 'high', 'urgent', 'critical'] }
-      }
-    },
-    roles: ['officer'],
-    handler: async ({ status, priority }, ctx) => {
-      const assignments = await assignmentRepo.complaintsAssignedToOfficer(ctx.userId, { limit: 50 });
-      const detailed = [];
-      for (const a of assignments) {
-        const c = await complaintRepo.getById(a.id);
-        if (!c) continue;
-        if (status && c.status !== status) continue;
-        if (priority && c.priority !== priority) continue;
-        detailed.push(sanitizeComplaint(c));
-      }
-      return detailed;
-    }
-  },
-  {
-    name: 'getSlaSummary',
-    description: 'Get SLA breakdown for officer active tasks (overdue, due soon, on track).',
-    parameters: { type: 'object', properties: {} },
-    roles: ['officer', 'admin'],
-    handler: async (_, ctx) => {
-      if (ctx.role === 'officer') {
-        const stats = await complaintRepo.getOfficerDashboardStats(ctx.userId);
-        return {
-          totalAssigned: stats.assigned_to_me || 0,
-          open: stats.open || 0,
-          inProgress: stats.in_progress || 0,
-          highPriority: stats.high_priority || 0,
-          dueSoon: stats.due_soon || 0,
-          overdue: stats.overdue || 0
-        };
-      }
-      return await adminAnalyticsRepo.analyticsOverview();
-    }
-  },
-  {
-    name: 'getDepartmentWorkload',
-    description: 'Get current active complaint workload and statistics for the officer department.',
-    parameters: { type: 'object', properties: {} },
-    roles: ['officer', 'admin'],
-    handler: async (_, ctx) => {
-      const userRes = await db.query('SELECT department_id FROM users WHERE id=$1', [ctx.userId]);
-      const deptId = userRes.rows[0]?.department_id;
-      if (!deptId) return { message: 'Officer has no assigned department.' };
-
-      const statsRes = await db.query(
-        `SELECT 
-           COUNT(*)::int AS total_complaints,
-           COUNT(CASE WHEN status='open' THEN 1 END)::int AS open,
-           COUNT(CASE WHEN status='in_progress' THEN 1 END)::int AS in_progress,
-           COUNT(CASE WHEN status='resolved' THEN 1 END)::int AS resolved
-         FROM complaints WHERE department_id=$1`,
-        [deptId]
-      );
-      return statsRes.rows[0];
-    }
-  },
-  {
-    name: 'draftCitizenUpdate',
-    description: 'Draft a polite, informative resolution or progress note for a citizen.',
-    parameters: {
-      type: 'object',
-      properties: {
-        complaintId: { type: 'string' },
-        actionTaken: { type: 'string', description: 'Brief summary of physical or admin work completed' }
-      },
-      required: ['complaintId', 'actionTaken']
-    },
-    roles: ['officer', 'admin'],
-    handler: async ({ complaintId, actionTaken }) => {
-      return {
-        draftNote: `Dear Citizen, regarding complaint ${complaintId}: Our municipal team has inspected the site and completed the following actions: ${actionTaken}. Thank you for helping keep our community clean and functioning.`,
-        suggestedStatus: 'in_progress'
-      };
-    }
-  },
-  {
-    name: 'summarizeComplaint',
-    description: 'Generate an executive summary of a complaint file.',
-    parameters: {
-      type: 'object',
-      properties: {
-        complaintId: { type: 'string' }
-      },
-      required: ['complaintId']
-    },
-    roles: ['officer', 'admin'],
-    handler: async ({ complaintId }) => {
-      const rawId = parseInt(String(complaintId).replace(/[^0-9]/g, ''), 10);
-      const c = await complaintRepo.getById(rawId);
-      if (!c) return { error: 'Complaint not found' };
-      const timeline = await complaintRepo.getTimeline(rawId);
-
-      return {
-        ...sanitizeComplaint(c),
-        totalStatusChanges: timeline.history.length,
-        latestUpdate: timeline.history[timeline.history.length - 1]?.note || 'No notes yet'
-      };
-    }
-  },
-
-  // ==========================================
-  // ADMIN TOOLS
-  // ==========================================
-  {
-    name: 'getComplaintAnalytics',
-    description: 'Retrieve overall system-wide complaint analytics, resolution rates, and trends.',
-    parameters: { type: 'object', properties: {} },
-    roles: ['admin'],
-    handler: async () => {
-      return await adminAnalyticsRepo.analyticsOverview();
-    }
-  },
-  {
-    name: 'getDepartmentPerformance',
-    description: 'Retrieve efficiency and SLA metrics broken down by department.',
-    parameters: { type: 'object', properties: {} },
-    roles: ['admin'],
-    handler: async () => {
-      return await adminAnalyticsRepo.departmentPerformance();
-    }
-  },
-  {
-    name: 'getOfficerPerformance',
-    description: 'Retrieve officer workload distribution and completion stats.',
-    parameters: { type: 'object', properties: {} },
-    roles: ['admin'],
-    handler: async () => {
-      return await adminAnalyticsRepo.officerPerformance();
-    }
-  },
-  {
-    name: 'getComplaintHotspots',
-    description: 'Get top geographic clusters/hotspots of complaints.',
-    parameters: { type: 'object', properties: {} },
-    roles: ['admin'],
-    handler: async () => {
-      const res = await db.query(
-        `SELECT address, category, COUNT(*)::int AS complaint_count
-         FROM complaints
-         WHERE address IS NOT NULL AND address != ''
-         GROUP BY address, category
-         HAVING COUNT(*) > 1
-         ORDER BY complaint_count DESC
-         LIMIT 10`
-      );
-      return res.rows;
-    }
-  },
-  {
-    name: 'getSlaBreach',
-    description: 'Get list of complaints currently breaching or near breaching SLA deadlines.',
-    parameters: { type: 'object', properties: {} },
-    roles: ['admin'],
-    handler: async () => {
-      const res = await db.query(
-        `SELECT id, title, category, priority, status, address, sla_due_at
-         FROM complaints
-         WHERE status NOT IN ('resolved', 'closed')
-           AND sla_due_at IS NOT NULL
-           AND sla_due_at < now()
-         ORDER BY sla_due_at ASC
-         LIMIT 15`
-      );
-      return res.rows.map(sanitizeComplaint);
-    }
-  },
-  {
-    name: 'getUnassignedComplaints',
-    description: 'Get list of active complaints not yet assigned to an officer.',
-    parameters: { type: 'object', properties: {} },
-    roles: ['admin'],
-    handler: async () => {
-      const res = await db.query(
-        `SELECT id, title, category, priority, created_at, address
-         FROM complaints
-         WHERE officer_id IS NULL AND status IN ('open', 'reopened')
-         ORDER BY priority DESC, created_at ASC
-         LIMIT 15`
-      );
-      return res.rows.map(sanitizeComplaint);
-    }
-  },
-  {
-    name: 'getCriticalComplaints',
-    description: 'Get urgent and critical severity complaints.',
-    parameters: { type: 'object', properties: {} },
-    roles: ['admin'],
-    handler: async () => {
-      const res = await db.query(
-        `SELECT id, title, category, priority, severity, status, created_at
-         FROM complaints
-         WHERE priority IN ('high', 'urgent', 'critical') OR severity IN ('major', 'critical')
-         ORDER BY created_at DESC
-         LIMIT 15`
-      );
-      return res.rows.map(sanitizeComplaint);
-    }
-  },
-  {
-    name: 'searchComplaints',
-    description: 'Search complaints across all parameters.',
-    parameters: {
-      type: 'object',
-      properties: {
-        query: { type: 'string' },
-        category: { type: 'string' },
-        status: { type: 'string' }
-      }
-    },
-    roles: ['officer', 'admin'],
-    handler: async ({ query, category, status }) => {
-      const results = await complaintRepo.searchComplaints({ query, category, status, limit: 15 });
-      return results.map(sanitizeComplaint);
-    }
-  },
-  {
-    name: 'getWardAnalytics',
-    description: 'Retrieve ward-level complaint breakdown, identifying which wards have the most unresolved complaints, SLA compliance, and top categories.',
-    parameters: { type: 'object', properties: {} },
-    roles: ['admin'],
-    handler: async () => {
-      try {
-        const wardAnalytics = require('../analytics/wardAnalytics');
-        const scorecards = await wardAnalytics.getWardScorecards({ timeframe: '30d' });
-        return scorecards.map(w => ({
-          wardId: w.id,
-          wardName: w.name,
-          wardNumber: w.wardNumber,
-          totalComplaints: w.totalComplaints,
-          open: w.open,
-          inProgress: w.inProgress,
-          unresolved: (w.open || 0) + (w.inProgress || 0),
-          resolved: w.resolved,
-          overdue: w.overdue,
-          critical: w.critical,
-          topCategory: w.topCategory,
-          resolutionRate: `${w.resolutionRate}%`,
-          slaCompliance: `${w.slaCompliance}%`
-        }));
-      } catch (err) {
-        return [];
-      }
-    }
-  },
-  {
-    name: 'generateBriefing',
-    description: 'Synthesize an executive briefing report for municipal leadership.',
-    parameters: { type: 'object', properties: {} },
-    roles: ['admin'],
-    handler: async () => {
-      const stats = await adminAnalyticsRepo.analyticsOverview();
-      return {
-        reportDate: new Date().toISOString(),
-        totalComplaints: stats.total || 0,
-        openCount: stats.open || 0,
-        overdueCount: stats.overdue || 0,
-        criticalCount: stats.critical || 0,
-        resolutionRate: stats.resolutionRate || 0,
-        keyInsight: 'Focus on resolving overdue items in high-priority categories.'
-      };
+  // 2. SLA Risk & Overdue Weight (up to 35 pts)
+  if (sanitized.isOverdue) {
+    score += 35;
+    reasons.push(`SLA breached (Overdue by ${sanitized.hoursOverdue || 1} hour(s))`);
+  } else if (sanitized.hoursRemaining !== null) {
+    if (sanitized.hoursRemaining <= 4) {
+      score += 25;
+      reasons.push(`Approaching SLA deadline in ${sanitized.hoursRemaining} hours`);
+    } else if (sanitized.hoursRemaining <= 12) {
+      score += 15;
+      reasons.push(`SLA deadline in ${sanitized.hoursRemaining} hours`);
+    } else if (sanitized.hoursRemaining <= 24) {
+      score += 8;
     }
   }
-];
 
-function getToolsForRole(role) {
-  const allowedRoles = ['citizen', 'officer', 'admin'];
-  const userRole = allowedRoles.includes(role) ? role : 'citizen';
-  return toolDefinitions.filter(t => t.roles.includes(userRole));
+  // 3. Complaint Age Weight (up to 15 pts)
+  if (sanitized.ageHours >= 168) { // > 7 days
+    score += 15;
+    reasons.push(`Pending for over 7 days (${Math.floor(sanitized.ageHours / 24)} days)`);
+  } else if (sanitized.ageHours >= 72) { // > 3 days
+    score += 10;
+    reasons.push(`Pending for ${Math.floor(sanitized.ageHours / 24)} days`);
+  } else if (sanitized.ageHours >= 24) {
+    score += 5;
+  }
+
+  // 4. Safety & Critical Infrastructure Weight (up to 10 pts)
+  const cat = (sanitized.category || '').toLowerCase();
+  if (['public_safety', 'drainage', 'roads', 'utilities'].includes(cat) && (sev === 'critical' || sev === 'major' || prio === 'high' || prio === 'critical')) {
+    score += 10;
+    reasons.push('Public safety & essential infrastructure hazard');
+  }
+
+  return {
+    ...sanitized,
+    score,
+    slaRisk: sanitized.isOverdue ? 'breached' : (sanitized.hoursRemaining && sanitized.hoursRemaining <= 12 ? 'high' : 'normal'),
+    reasons
+  };
 }
 
-function formatToolsForGroq(tools) {
-  return tools.map(t => ({
-    type: 'function',
-    function: {
-      name: t.name,
-      description: t.description,
-      parameters: t.parameters
-    }
-  }));
+// ==========================================
+// CITIZEN DATABASE TOOLS
+// ==========================================
+
+async function getMyComplaints(userId, { status, limit = 10 } = {}) {
+  const query = `
+    SELECT c.*, d.name AS department_name, uo.name AS assigned_officer_name
+    FROM complaints c
+    LEFT JOIN departments d ON d.id = c.department_id
+    LEFT JOIN users uo ON uo.id = c.officer_id
+    WHERE c.user_id = $1
+      ${status ? 'AND c.status = $2' : ''}
+    ORDER BY c.created_at DESC
+    LIMIT $${status ? 3 : 2};
+  `;
+  const params = status ? [userId, status, Math.min(limit, 30)] : [userId, Math.min(limit, 30)];
+  const res = await db.query(query, params);
+  return res.rows.map(sanitizeComplaint);
 }
 
-async function executeTool(name, args, ctx) {
-  const tool = toolDefinitions.find(t => t.name === name);
-  if (!tool) {
-    throw new Error(`Tool ${name} not found`);
-  }
-  if (!tool.roles.includes(ctx.role)) {
-    throw new Error(`Unauthorized tool call: ${name} is not permitted for role ${ctx.role}`);
-  }
-  return await tool.handler(args || {}, ctx);
+async function getMyComplaintById(userId, complaintId) {
+  const rawId = parseInt(String(complaintId).replace(/[^0-9]/g, ''), 10);
+  if (isNaN(rawId)) return null;
+
+  const query = `
+    SELECT c.*, d.name AS department_name, uo.name AS assigned_officer_name
+    FROM complaints c
+    LEFT JOIN departments d ON d.id = c.department_id
+    LEFT JOIN users uo ON uo.id = c.officer_id
+    WHERE c.id = $1 AND c.user_id = $2;
+  `;
+  const res = await db.query(query, [rawId, userId]);
+  if (!res.rows[0]) return null;
+
+  const timeline = await complaintRepo.getTimeline(rawId);
+  return {
+    ...sanitizeComplaint(res.rows[0]),
+    timeline: (timeline.history || []).map(h => ({
+      from: h.status_from,
+      to: h.status_to,
+      note: h.note,
+      date: h.created_at
+    }))
+  };
+}
+
+async function getMyComplaintHistory(userId, limit = 20) {
+  const query = `
+    SELECT c.id, c.title, c.category, c.status, c.priority, c.created_at, c.resolved_at,
+           d.name AS department_name
+    FROM complaints c
+    LEFT JOIN departments d ON d.id = c.department_id
+    WHERE c.user_id = $1
+    ORDER BY c.created_at DESC
+    LIMIT $2;
+  `;
+  const res = await db.query(query, [userId, limit]);
+  return res.rows.map(sanitizeComplaint);
+}
+
+async function getMyReputation(userId) {
+  const pointsData = await pointService.getUserPoints(userId);
+  const badges = await pointService.getUserBadges(userId);
+  return {
+    points: pointsData.points || 0,
+    civicLevel: pointsData.level || 'New Contributor',
+    badgeIcon: pointsData.badgeIcon || '🌱',
+    badges: badges || [],
+    breakdown: pointsData.breakdown || {}
+  };
+}
+
+async function getMyPointHistory(userId, limit = 10) {
+  const history = await pointService.getPointHistory(userId, { limit });
+  return history;
+}
+
+async function getPublicCivicStats() {
+  const query = `
+    SELECT
+      COUNT(*)::int AS total_complaints,
+      COUNT(CASE WHEN status = 'resolved' THEN 1 END)::int AS resolved_complaints,
+      COUNT(CASE WHEN status IN ('open', 'in_progress', 'assigned') THEN 1 END)::int AS active_complaints,
+      ROUND(COUNT(CASE WHEN status = 'resolved' THEN 1 END)::numeric / NULLIF(COUNT(*), 0) * 100, 1) AS resolution_rate
+    FROM complaints;
+  `;
+  const res = await db.query(query);
+  return res.rows[0] || { total_complaints: 0, resolved_complaints: 0, active_complaints: 0, resolution_rate: 0 };
+}
+
+function getCivicGuidelines(category) {
+  const guidelines = {
+    sanitation: {
+      category: 'Sanitation & Waste',
+      slaHours: 48,
+      advice: 'Ensure photos clearly show the pile or overflow and include the nearest street address or landmark.',
+      contact: 'Department of Public Health & Sanitation'
+    },
+    roads: {
+      category: 'Roads & Potholes',
+      slaHours: 72,
+      advice: 'Include a landmark and approximate depth of pothole or extent of road damage.',
+      contact: 'Department of Transportation & Municipal Roads'
+    },
+    lighting: {
+      category: 'Street Lighting',
+      slaHours: 24,
+      advice: 'Note pole numbers if visible, and specify if entire street or single bulb is dark.',
+      contact: 'Department of Electrical & Lighting Infrastructure'
+    },
+    drainage: {
+      category: 'Water & Drainage',
+      slaHours: 24,
+      advice: 'Report standing water depth or blockage source immediately during monsoon season.',
+      contact: 'Department of Water Works & Sewage Management'
+    },
+    general: {
+      category: 'Municipal Services',
+      slaHours: 48,
+      advice: 'Clear photographs and GPS verification speed up officer dispatch by up to 40%.',
+      contact: 'Civic GreenNet Central Operations'
+    }
+  };
+  return guidelines[category?.toLowerCase()] || guidelines.general;
+}
+
+// ==========================================
+// OFFICER DATABASE TOOLS
+// ==========================================
+
+async function getOfficerAssignments(officerId, { status = null, limit = 30 } = {}) {
+  const query = `
+    SELECT c.*, d.name AS department_name
+    FROM complaints c
+    LEFT JOIN departments d ON d.id = c.department_id
+    WHERE c.officer_id = $1
+      ${status ? 'AND c.status = $2' : "AND c.status NOT IN ('resolved', 'closed', 'rejected')"}
+    ORDER BY c.created_at ASC
+    LIMIT $${status ? 3 : 2};
+  `;
+  const params = status ? [officerId, status, limit] : [officerId, limit];
+  const res = await db.query(query, params);
+  return res.rows.map(sanitizeComplaint);
+}
+
+async function getOfficerPriorityCases(officerId) {
+  const activeCases = await getOfficerAssignments(officerId);
+  const scored = activeCases.map(calculateComplaintPriority);
+  scored.sort((a, b) => b.score - a.score);
+  return scored;
+}
+
+async function getOfficerSLARisks(officerId) {
+  const query = `
+    SELECT c.*, d.name AS department_name
+    FROM complaints c
+    LEFT JOIN departments d ON d.id = c.department_id
+    WHERE c.officer_id = $1
+      AND c.status NOT IN ('resolved', 'closed', 'rejected')
+      AND c.sla_due_at IS NOT NULL
+      AND c.sla_due_at < now() + INTERVAL '24 hours'
+    ORDER BY c.sla_due_at ASC
+    LIMIT 20;
+  `;
+  const res = await db.query(query, [officerId]);
+  return res.rows.map(calculateComplaintPriority);
+}
+
+async function getOfficerPerformance(officerId) {
+  const stats = await complaintRepo.getOfficerDashboardStats(officerId);
+  const pointsData = await pointService.getUserPoints(officerId);
+
+  const query = `
+    SELECT
+      COUNT(CASE WHEN status = 'resolved' AND resolved_at <= sla_due_at THEN 1 END)::int AS resolved_within_sla,
+      COUNT(CASE WHEN status = 'resolved' THEN 1 END)::int AS total_resolved_all_time,
+      COUNT(CASE WHEN status = 'resolved' AND resolved_at >= date_trunc('month', now()) THEN 1 END)::int AS resolved_this_month
+    FROM complaints
+    WHERE officer_id = $1;
+  `;
+  const res = await db.query(query, [officerId]);
+  const perf = res.rows[0] || {};
+
+  const totalResolved = perf.total_resolved_all_time || 0;
+  const withinSla = perf.resolved_within_sla || 0;
+  const slaComplianceRate = totalResolved > 0 ? Math.round((withinSla / totalResolved) * 100) : 100;
+
+  return {
+    assignedToMe: stats.assigned_to_me || 0,
+    open: stats.open || 0,
+    inProgress: stats.in_progress || 0,
+    overdue: stats.overdue || 0,
+    dueSoon: stats.due_soon || 0,
+    resolvedThisMonth: perf.resolved_this_month || 0,
+    totalResolved,
+    slaComplianceRate,
+    points: pointsData.points || 0,
+    civicLevel: pointsData.level || 'Field Officer'
+  };
+}
+
+async function getOfficerReputation(officerId) {
+  const pointsData = await pointService.getUserPoints(officerId);
+  const leaderboard = await pointService.getOfficerLeaderboard({ limit: 50 });
+  const myRank = leaderboard.findIndex(item => item.user_id === officerId) + 1;
+
+  return {
+    points: pointsData.points || 0,
+    level: pointsData.level || 'Field Officer',
+    badgeIcon: pointsData.badgeIcon || '🛡️',
+    rank: myRank > 0 ? myRank : null,
+    totalOfficersRanked: leaderboard.length
+  };
+}
+
+async function getNearbyOperationalIssues(officerId) {
+  // Find officer department and nearby open complaints
+  const officerRes = await db.query('SELECT department_id FROM users WHERE id = $1', [officerId]);
+  const deptId = officerRes.rows[0]?.department_id;
+
+  const query = `
+    SELECT c.*, d.name AS department_name
+    FROM complaints c
+    LEFT JOIN departments d ON d.id = c.department_id
+    WHERE c.status IN ('open', 'assigned')
+      ${deptId ? 'AND (c.department_id = $1 OR c.department_id IS NULL)' : ''}
+    ORDER BY c.created_at DESC
+    LIMIT 10;
+  `;
+  const res = await db.query(query, deptId ? [deptId] : []);
+  return res.rows.map(sanitizeComplaint);
+}
+
+// ==========================================
+// ADMIN DATABASE TOOLS
+// ==========================================
+
+async function getUnresolvedByCategory(category = null) {
+  const cat = category ? category.toLowerCase() : null;
+  const query = cat
+    ? `SELECT category, COUNT(*)::int AS count FROM complaints WHERE status NOT IN ('resolved', 'closed') AND LOWER(category) = $1 GROUP BY category`
+    : `SELECT category, COUNT(*)::int AS count FROM complaints WHERE status NOT IN ('resolved', 'closed') GROUP BY category ORDER BY count DESC`;
+  const res = await db.query(query, cat ? [cat] : []);
+  const total = res.rows.reduce((sum, r) => sum + r.count, 0);
+  return { data: res.rows, totalCount: total, filterCategory: cat };
+}
+
+async function getCriticalToday() {
+  const query = `
+    SELECT c.*, d.name AS department_name, uo.name AS assigned_officer_name
+    FROM complaints c
+    LEFT JOIN departments d ON d.id = c.department_id
+    LEFT JOIN users uo ON uo.id = c.officer_id
+    WHERE (c.priority IN ('high', 'urgent', 'critical') OR c.severity = 'critical')
+      AND c.created_at >= now() - INTERVAL '24 hours'
+    ORDER BY c.created_at DESC
+    LIMIT 15;
+  `;
+  const res = await db.query(query);
+  return {
+    totalCriticalToday: res.rows.length,
+    complaints: res.rows.map(calculateComplaintPriority)
+  };
+}
+
+async function getDepartmentAnalytics() {
+  const { getDepartmentIntelligence } = require('./insightGenerator');
+  const depts = await getDepartmentIntelligence();
+  const sorted = [...depts].sort((a, b) => b.totalAssigned - a.totalAssigned);
+  return {
+    departments: sorted,
+    topWorkloadDepartment: sorted[0] || null
+  };
+}
+
+async function getSLABreaches() {
+  const query = `
+    SELECT c.*, d.name AS department_name, uo.name AS assigned_officer_name,
+           ROUND(EXTRACT(EPOCH FROM (now() - c.sla_due_at)) / 3600) AS hours_overdue
+    FROM complaints c
+    LEFT JOIN departments d ON d.id = c.department_id
+    LEFT JOIN users uo ON uo.id = c.officer_id
+    WHERE c.status NOT IN ('resolved', 'closed', 'rejected')
+      AND c.sla_due_at IS NOT NULL
+      AND c.sla_due_at < now()
+    ORDER BY c.sla_due_at ASC
+    LIMIT 20;
+  `;
+  const res = await db.query(query);
+  return {
+    totalBreaches: res.rows.length,
+    breaches: res.rows.map(calculateComplaintPriority)
+  };
+}
+
+async function getWardAnalytics() {
+  const wardAnalytics = require('../analytics/wardAnalytics');
+  const scorecards = await wardAnalytics.getWardScorecards({ timeframe: '30d' });
+  const sorted = [...scorecards].sort((a, b) => ((b.open || 0) + (b.inProgress || 0)) - ((a.open || 0) + (a.inProgress || 0)));
+  return {
+    topUnresolvedWard: sorted[0] || null,
+    wardBreakdown: sorted.slice(0, 10).map(w => ({
+      wardId: w.id,
+      wardName: w.name,
+      wardNumber: w.wardNumber,
+      unresolved: (w.open || 0) + (w.inProgress || 0),
+      open: w.open,
+      inProgress: w.inProgress,
+      total: w.totalComplaints,
+      overdue: w.overdue,
+      slaCompliance: `${w.slaCompliance}%`
+    }))
+  };
+}
+
+async function getHighestPriorityComplaints() {
+  const query = `
+    SELECT c.*, d.name AS department_name, uo.name AS assigned_officer_name
+    FROM complaints c
+    LEFT JOIN departments d ON d.id = c.department_id
+    LEFT JOIN users uo ON uo.id = c.officer_id
+    WHERE c.status NOT IN ('resolved', 'closed', 'rejected')
+    ORDER BY c.created_at ASC
+    LIMIT 30;
+  `;
+  const res = await db.query(query);
+  const scored = res.rows.map(calculateComplaintPriority);
+  scored.sort((a, b) => b.score - a.score);
+  return {
+    totalHighPriority: scored.filter(c => c.score >= 30).length,
+    complaints: scored.slice(0, 10)
+  };
+}
+
+async function getOfficerPerformanceAnalytics() {
+  const { getOfficerWorkloadIntelligence } = require('./insightGenerator');
+  const officers = await getOfficerWorkloadIntelligence();
+  const sortedByWorkload = [...officers].sort((a, b) => b.activeAssignments - a.activeAssignments);
+  const sortedByCompliance = [...officers].sort((a, b) => (b.slaCompliance || 0) - (a.slaCompliance || 0));
+
+  return {
+    highestWorkloadOfficers: sortedByWorkload.slice(0, 5),
+    bestComplianceOfficers: sortedByCompliance.slice(0, 5),
+    needsAttentionOfficers: sortedByWorkload.filter(o => o.overdueAssignments > 0).slice(0, 5)
+  };
+}
+
+async function getComplaintTrends() {
+  const { getPredictiveTrends } = require('./insightGenerator');
+  const trends = await getPredictiveTrends('30d');
+  const rising = (trends.trends || []).sort((a, b) => b.changePercentage - a.changePercentage);
+  return {
+    topRising: rising[0] || null,
+    trends: rising
+  };
+}
+
+async function getGISHotspots() {
+  const { analyzeHotspots } = require('./hotspotAnalyzer');
+  const hotspots = await analyzeHotspots({ days: 30 });
+  return {
+    topHotspot: hotspots[0] || null,
+    hotspots: hotspots.slice(0, 5)
+  };
+}
+
+async function getReopenedComplaints() {
+  const query = `
+    SELECT c.*, d.name AS department_name, uo.name AS assigned_officer_name
+    FROM complaints c
+    LEFT JOIN departments d ON d.id = c.department_id
+    LEFT JOIN users uo ON uo.id = c.officer_id
+    WHERE c.status = 'reopened'
+    ORDER BY c.updated_at DESC
+    LIMIT 15;
+  `;
+  const res = await db.query(query);
+  return {
+    totalReopened: res.rows.length,
+    complaints: res.rows.map(sanitizeComplaint)
+  };
+}
+
+async function getCivicHealth() {
+  const overview = await adminAnalyticsRepo.analyticsOverview();
+  const breaches = await getSLABreaches();
+  const critical = await getCriticalToday();
+
+  return {
+    totalComplaints: overview.total || 0,
+    openComplaints: overview.open || 0,
+    inProgressComplaints: overview.in_progress || 0,
+    resolvedComplaints: overview.resolved || 0,
+    overdueComplaints: breaches.totalBreaches || 0,
+    criticalToday: critical.totalCriticalToday || 0,
+    resolutionRate: overview.resolutionRate || 0,
+    slaCompliance: overview.slaCompliance || 0
+  };
 }
 
 module.exports = {
-  toolDefinitions,
-  getToolsForRole,
-  formatToolsForGroq,
-  executeTool,
-  sanitizeComplaint
+  sanitizeComplaint,
+  calculateComplaintPriority,
+  // Citizen
+  getMyComplaints,
+  getMyComplaintById,
+  getMyComplaintHistory,
+  getMyReputation,
+  getMyPointHistory,
+  getPublicCivicStats,
+  getCivicGuidelines,
+  // Officer
+  getOfficerAssignments,
+  getOfficerPriorityCases,
+  getOfficerSLARisks,
+  getOfficerPerformance,
+  getOfficerReputation,
+  getNearbyOperationalIssues,
+  // Admin
+  getUnresolvedByCategory,
+  getCriticalToday,
+  getDepartmentAnalytics,
+  getSLABreaches,
+  getWardAnalytics,
+  getHighestPriorityComplaints,
+  getOfficerPerformanceAnalytics,
+  getComplaintTrends,
+  getGISHotspots,
+  getReopenedComplaints,
+  getCivicHealth
 };

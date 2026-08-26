@@ -1,9 +1,27 @@
 import api, { unwrapResponse } from './api';
 
 export const aiApi = {
-  // Send message to AI assistant
+  // Generic chat endpoint (fallback)
   sendMessage: async ({ conversationId, message, complaintId }) => {
     const res = await api.post('/ai/chat', { conversationId, message, complaintId });
+    return unwrapResponse(res);
+  },
+
+  // Dedicated Citizen Assistant endpoint
+  sendCitizenMessage: async ({ conversationId, message, complaintId }) => {
+    const res = await api.post('/ai/citizen/chat', { conversationId, message, complaintId });
+    return unwrapResponse(res);
+  },
+
+  // Dedicated Officer Copilot endpoint
+  sendOfficerMessage: async ({ conversationId, message, complaintId }) => {
+    const res = await api.post('/ai/officer/chat', { conversationId, message, complaintId });
+    return unwrapResponse(res);
+  },
+
+  // Dedicated Admin Governance Copilot endpoint
+  sendAdminMessage: async ({ conversationId, message, complaintId }) => {
+    const res = await api.post('/ai/admin/chat', { conversationId, message, complaintId });
     return unwrapResponse(res);
   },
 
