@@ -6,7 +6,7 @@ import {
   ChevronRight, Copy, Shield, Clock, User, Image as ImageIcon,
   ChevronLeft, X, ExternalLink, Briefcase, AlertCircle, CheckCircle2,
   Upload, AlertTriangle, RefreshCw, Check, ThumbsUp, Bookmark, MessageSquare,
-  Send, CheckCheck, UploadCloud, Plus, EyeOff
+  Send, CheckCheck, UploadCloud, Plus, EyeOff, Users
 } from 'lucide-react'
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet'
 import L from 'leaflet'
@@ -29,6 +29,8 @@ import AIChatPanel from '../components/ai/AIChatPanel'
 const VALID_TRANSITIONS = {
   open: ['in_progress', 'rejected'],
   pending: ['in_progress', 'rejected'],
+  assigned: ['accepted', 'in_progress', 'rejected'],
+  accepted: ['in_progress', 'rejected'],
   in_progress: ['resolved', 'rejected'],
   rejected: ['open', 'in_progress'],
   resolved: ['closed', 'reopened'],

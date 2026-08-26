@@ -296,45 +296,59 @@ async function getComplaint(req, res) {
 async function updateComplaint(req, res) {
   try {
     const id = parseInt(req.params.id, 10);
-    const hasAssignmentChanges = req.body.department_id !== undefined || req.body.officer_id !== undefined || req.body.departmentId !== undefined || req.body.officerId !== undefined;
 
-    if (hasAssignmentChanges) {
-      const departmentId = req.body.department_id !== undefined ? req.body.department_id : req.body.departmentId;
-      const officerId = req.body.officer_id !== undefined ? req.body.officer_id : req.body.officerId;
+    // Fetch current complaint state
+    const current = await adminComplaintRepo.getComplaintById(id);
+    if (!current) return error(res, 'Complaint not found', 404);
+
+    const reqDeptId = req.body.department_id !== undefined ? req.body.department_id : req.body.departmentId;
+    const reqOfficerId = req.body.officer_id !== undefined ? req.body.officer_id : req.body.officerId;
+
+    // Only run assignment if dept or officer has actually changed from current values
+    const deptChanged = reqDeptId !== undefined && String(reqDeptId || '') !== String(current.department_id || '');
+    const officerChanged = reqOfficerId !== undefined && String(reqOfficerId || '') !== String(current.officer_id || '');
+    const hasRealAssignmentChange = deptChanged || officerChanged;
+
+    if (hasRealAssignmentChange) {
       const priority = req.body.priority || null;
-
       await assignmentService.assign({
         complaintId: id,
-        departmentId: departmentId ? parseInt(departmentId, 10) : null,
-        officerId: officerId ? parseInt(officerId, 10) : null,
+        departmentId: reqDeptId ? parseInt(reqDeptId, 10) : null,
+        officerId: reqOfficerId ? parseInt(reqOfficerId, 10) : null,
         priority: priority || null,
         assignedBy: getUserId(req)
       });
     }
 
+    // Update priority/severity fields if provided
     const allowed = ['priority', 'severity'];
     const fields = {};
     allowed.forEach((k) => {
       if (req.body[k] !== undefined) fields[k] = req.body[k] || null;
     });
-
     if (Object.keys(fields).length > 0) {
       await adminComplaintRepo.updateComplaintAdmin(id, fields);
     }
 
-    // Process explicit status override if requested and not stale 'open'/'assigned' default
+    // Process explicit status transition if requested
     const requestedStatus = req.body.status;
-    if (requestedStatus && requestedStatus !== 'assigned') {
-      const comp = await adminComplaintRepo.getComplaintById(id);
-      const isStaleOpenAfterAssign = hasAssignmentChanges && requestedStatus === 'open' && comp && comp.status === 'assigned';
-      if (!isStaleOpenAfterAssign && comp && comp.status !== requestedStatus) {
+    if (requestedStatus) {
+      const freshComp = await adminComplaintRepo.getComplaintById(id);
+      const currentStatus = freshComp?.status || 'open';
+
+      // Skip if status hasn't changed or if it's a stale open/assigned echo from a successful assignment
+      const isStaleEcho = hasRealAssignmentChange && (
+        (requestedStatus === 'open' && currentStatus === 'assigned') ||
+        (requestedStatus === 'assigned' && currentStatus === 'assigned')
+      );
+
+      if (!isStaleEcho && currentStatus !== requestedStatus) {
         const timelineService = require('../services/timelineService');
         await timelineService.changeStatus(id, requestedStatus, getUserId(req), req.body.note || 'Status updated by administrator');
       }
     }
 
     const data = await adminComplaintRepo.getComplaintById(id);
-    if (!data) return error(res, 'Complaint not found', 404);
     await auditLogger.log(req, 'complaint_update', id, 'complaint', { ...fields, status: data.status, officer_id: data.officer_id, department_id: data.department_id });
     return success(res, data, 'Complaint updated');
   } catch (err) {

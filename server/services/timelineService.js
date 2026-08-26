@@ -14,7 +14,7 @@ class StatusTransitionError extends Error {
 const VALID_TRANSITIONS = {
   open: ['assigned', 'rejected'],
   pending: ['assigned', 'rejected'],
-  assigned: ['accepted', 'rejected'],
+  assigned: ['accepted', 'in_progress', 'rejected'],
   accepted: ['in_progress', 'rejected'],
   in_progress: ['resolved', 'rejected'],
   rejected: ['open', 'assigned', 'in_progress'],
