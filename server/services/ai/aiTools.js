@@ -17,12 +17,18 @@ function sanitizeComplaint(c) {
 
   let hoursRemaining = null;
   let hoursOverdue = null;
+  let slaCategory = 'NORMAL';
+
   if (slaDate) {
     const diffHours = (slaDate - now) / (1000 * 60 * 60);
     if (diffHours < 0) {
-      hoursOverdue = Math.round(Math.abs(diffHours));
+      hoursOverdue = Math.round(Math.abs(diffHours) * 10) / 10;
+      slaCategory = 'OVERDUE';
     } else {
       hoursRemaining = Math.round(diffHours * 10) / 10;
+      if (hoursRemaining <= 2) slaCategory = 'DUE_WITHIN_2_HOURS';
+      else if (hoursRemaining <= 6) slaCategory = 'DUE_WITHIN_6_HOURS';
+      else if (hoursRemaining <= 24) slaCategory = 'DUE_WITHIN_24_HOURS';
     }
   }
 
@@ -34,6 +40,7 @@ function sanitizeComplaint(c) {
     rawId: numId,
     title: c.title || 'Untitled Issue',
     summary: c.summary || c.description || null,
+    description: c.description || null,
     status: c.status || 'open',
     category: c.category || 'general',
     priority: c.priority || 'medium',
@@ -45,6 +52,7 @@ function sanitizeComplaint(c) {
     isOverdue,
     hoursRemaining,
     hoursOverdue,
+    slaCategory,
     ageHours,
     department_id: c.department_id || null,
     department_name: c.department_name || null,
@@ -86,9 +94,12 @@ function calculateComplaintPriority(complaint) {
     score += 35;
     reasons.push(`SLA breached (Overdue by ${sanitized.hoursOverdue || 1} hour(s))`);
   } else if (sanitized.hoursRemaining !== null) {
-    if (sanitized.hoursRemaining <= 4) {
-      score += 25;
-      reasons.push(`Approaching SLA deadline in ${sanitized.hoursRemaining} hours`);
+    if (sanitized.hoursRemaining <= 2) {
+      score += 30;
+      reasons.push(`Critical: SLA deadline in ${sanitized.hoursRemaining} hours`);
+    } else if (sanitized.hoursRemaining <= 6) {
+      score += 20;
+      reasons.push(`Urgent: SLA deadline in ${sanitized.hoursRemaining} hours`);
     } else if (sanitized.hoursRemaining <= 12) {
       score += 15;
       reasons.push(`SLA deadline in ${sanitized.hoursRemaining} hours`);
@@ -171,7 +182,7 @@ async function getMyComplaintById(userId, complaintId) {
 
 async function getMyComplaintHistory(userId, limit = 20) {
   const query = `
-    SELECT c.id, c.title, c.category, c.status, c.priority, c.created_at, c.resolved_at,
+    SELECT c.id, c.title, c.category, c.status, c.priority, c.created_at, c.resolution_at,
            d.name AS department_name
     FROM complaints c
     LEFT JOIN departments d ON d.id = c.department_id
@@ -268,78 +279,249 @@ async function getOfficerAssignments(officerId, { status = null, limit = 30 } = 
   return res.rows.map(sanitizeComplaint);
 }
 
+async function getOfficerWorkload(officerId) {
+  const assignments = await getOfficerAssignments(officerId);
+  const scored = assignments.map(calculateComplaintPriority);
+
+  const pendingStart = scored.filter(c => c.status === 'open' || c.status === 'assigned');
+  const inProgress = scored.filter(c => c.status === 'in_progress');
+  const overdue = scored.filter(c => c.isOverdue);
+  const critical = scored.filter(c => (c.severity === 'critical' || c.priority === 'critical'));
+
+  return {
+    totalActive: scored.length,
+    pendingStartCount: pendingStart.length,
+    inProgressCount: inProgress.length,
+    overdueCount: overdue.length,
+    criticalCount: critical.length,
+    cases: scored
+  };
+}
+
 async function getOfficerPriorityCases(officerId) {
   const activeCases = await getOfficerAssignments(officerId);
-  const scored = activeCases.map(calculateComplaintPriority);
+  let scored = activeCases.map(calculateComplaintPriority);
   scored.sort((a, b) => b.score - a.score);
-  return scored;
+
+  // If officer has 0 assigned cases, check if there are urgent unassigned cases in officer's department
+  let unassignedDepartmentCases = [];
+  if (scored.length === 0) {
+    const userRes = await db.query('SELECT department_id FROM users WHERE id = $1', [officerId]);
+    const deptId = userRes.rows[0]?.department_id;
+    if (deptId) {
+      const unassignedRes = await db.query(
+        `SELECT c.*, d.name AS department_name
+         FROM complaints c
+         LEFT JOIN departments d ON d.id = c.department_id
+         WHERE c.department_id = $1 AND c.officer_id IS NULL AND c.status IN ('open', 'reopened')
+         ORDER BY c.created_at ASC LIMIT 5`,
+        [deptId]
+      );
+      unassignedDepartmentCases = unassignedRes.rows.map(calculateComplaintPriority);
+      unassignedDepartmentCases.sort((a, b) => b.score - a.score);
+    }
+  }
+
+  return {
+    assignedPriorityCases: scored,
+    unassignedDepartmentCases,
+    topCase: scored[0] || unassignedDepartmentCases[0] || null
+  };
+}
+
+async function getOfficerSlaAlerts(officerId) {
+  const assignments = await getOfficerAssignments(officerId);
+  const scored = assignments.map(calculateComplaintPriority);
+
+  const overdue = scored.filter(c => c.isOverdue);
+  const dueWithin2Hours = scored.filter(c => !c.isOverdue && c.slaCategory === 'DUE_WITHIN_2_HOURS');
+  const dueWithin6Hours = scored.filter(c => !c.isOverdue && c.slaCategory === 'DUE_WITHIN_6_HOURS');
+  const dueWithin24Hours = scored.filter(c => !c.isOverdue && c.slaCategory === 'DUE_WITHIN_24_HOURS');
+
+  return {
+    totalAtRisk: overdue.length + dueWithin2Hours.length + dueWithin6Hours.length,
+    overdue,
+    dueWithin2Hours,
+    dueWithin6Hours,
+    dueWithin24Hours,
+    allCases: scored
+  };
 }
 
 async function getOfficerSLARisks(officerId) {
-  const query = `
-    SELECT c.*, d.name AS department_name
-    FROM complaints c
-    LEFT JOIN departments d ON d.id = c.department_id
-    WHERE c.officer_id = $1
-      AND c.status NOT IN ('resolved', 'closed', 'rejected')
-      AND c.sla_due_at IS NOT NULL
-      AND c.sla_due_at < now() + INTERVAL '24 hours'
-    ORDER BY c.sla_due_at ASC
-    LIMIT 20;
-  `;
-  const res = await db.query(query, [officerId]);
-  return res.rows.map(calculateComplaintPriority);
+  const alerts = await getOfficerSlaAlerts(officerId);
+  return [...alerts.overdue, ...alerts.dueWithin2Hours, ...alerts.dueWithin6Hours, ...alerts.dueWithin24Hours];
+}
+
+async function getOfficerDepartmentWorkload(officerId) {
+  const userRes = await db.query(
+    `SELECT u.department_id, d.name AS department_name
+     FROM users u
+     LEFT JOIN departments d ON d.id = u.department_id
+     WHERE u.id = $1`,
+    [officerId]
+  );
+  const dept = userRes.rows[0];
+  if (!dept || !dept.department_id) {
+    return { message: 'Officer has no assigned department.', departmentName: 'Unassigned' };
+  }
+
+  const statsRes = await db.query(
+    `SELECT
+       COUNT(*)::int AS total_complaints,
+       COUNT(CASE WHEN status IN ('open', 'assigned', 'in_progress', 'reopened') THEN 1 END)::int AS active_complaints,
+       COUNT(CASE WHEN status = 'open' THEN 1 END)::int AS open_queue,
+       COUNT(CASE WHEN status = 'in_progress' THEN 1 END)::int AS in_progress,
+       COUNT(CASE WHEN status = 'resolved' THEN 1 END)::int AS resolved,
+       COUNT(CASE WHEN sla_due_at < now() AND status NOT IN ('resolved', 'closed', 'rejected') THEN 1 END)::int AS overdue,
+       COUNT(CASE WHEN (priority IN ('high', 'urgent', 'critical') OR severity = 'critical') AND status NOT IN ('resolved', 'closed') THEN 1 END)::int AS critical
+     FROM complaints WHERE department_id = $1`,
+    [dept.department_id]
+  );
+
+  const stats = statsRes.rows[0] || {};
+  return {
+    departmentId: dept.department_id,
+    departmentName: dept.department_name || 'My Department',
+    ...stats
+  };
 }
 
 async function getOfficerPerformance(officerId) {
-  const stats = await complaintRepo.getOfficerDashboardStats(officerId);
-  const pointsData = await pointService.getUserPoints(officerId);
+  const directRes = await db.query(
+    `SELECT
+       COUNT(CASE WHEN status IN ('open', 'assigned', 'in_progress') THEN 1 END)::int AS assigned_to_me,
+       COUNT(CASE WHEN status IN ('open', 'assigned') THEN 1 END)::int AS open,
+       COUNT(CASE WHEN status = 'in_progress' THEN 1 END)::int AS in_progress,
+       COUNT(CASE WHEN sla_due_at < now() AND status NOT IN ('resolved', 'closed', 'rejected') THEN 1 END)::int AS overdue,
+       COUNT(CASE WHEN sla_due_at >= now() AND sla_due_at <= now() + INTERVAL '12 hours' AND status NOT IN ('resolved', 'closed', 'rejected') THEN 1 END)::int AS due_soon,
+       COUNT(CASE WHEN status = 'resolved' AND resolution_at <= sla_due_at THEN 1 END)::int AS resolved_within_sla,
+       COUNT(CASE WHEN status = 'resolved' THEN 1 END)::int AS total_resolved_all_time,
+       COUNT(CASE WHEN status = 'resolved' AND resolution_at >= date_trunc('month', now()) THEN 1 END)::int AS resolved_this_month,
+       COUNT(CASE WHEN status = 'reopened' THEN 1 END)::int AS reopened_count
+     FROM complaints WHERE officer_id = $1`,
+    [officerId]
+  );
+  const perf = directRes.rows[0] || {};
 
-  const query = `
-    SELECT
-      COUNT(CASE WHEN status = 'resolved' AND resolved_at <= sla_due_at THEN 1 END)::int AS resolved_within_sla,
-      COUNT(CASE WHEN status = 'resolved' THEN 1 END)::int AS total_resolved_all_time,
-      COUNT(CASE WHEN status = 'resolved' AND resolved_at >= date_trunc('month', now()) THEN 1 END)::int AS resolved_this_month
-    FROM complaints
-    WHERE officer_id = $1;
-  `;
-  const res = await db.query(query, [officerId]);
-  const perf = res.rows[0] || {};
+  let pointsData = { points: 0, level: 'Field Officer' };
+  try {
+    pointsData = await pointService.getUserPoints(officerId);
+  } catch (e) {
+    // default points
+  }
+
+  let leaderboardItems = [];
+  try {
+    const lRes = await pointService.getOfficerLeaderboard({ limit: 100 });
+    leaderboardItems = Array.isArray(lRes) ? lRes : (lRes.items || []);
+  } catch (e) {
+    leaderboardItems = [];
+  }
+  const myRank = leaderboardItems.findIndex(item => (item.officer_id || item.user_id) === officerId) + 1;
 
   const totalResolved = perf.total_resolved_all_time || 0;
   const withinSla = perf.resolved_within_sla || 0;
   const slaComplianceRate = totalResolved > 0 ? Math.round((withinSla / totalResolved) * 100) : 100;
+  const assignedCount = perf.assigned_to_me || 0;
+  const resolutionRate = (assignedCount + totalResolved) > 0
+    ? Math.round((totalResolved / (assignedCount + totalResolved)) * 100)
+    : 100;
 
   return {
-    assignedToMe: stats.assigned_to_me || 0,
-    open: stats.open || 0,
-    inProgress: stats.in_progress || 0,
-    overdue: stats.overdue || 0,
-    dueSoon: stats.due_soon || 0,
+    assignedToMe: assignedCount,
+    open: perf.open || 0,
+    inProgress: perf.in_progress || 0,
+    overdue: perf.overdue || 0,
+    dueSoon: perf.due_soon || 0,
     resolvedThisMonth: perf.resolved_this_month || 0,
     totalResolved,
+    reopenedCount: perf.reopened_count || 0,
+    resolutionRate,
     slaComplianceRate,
     points: pointsData.points || 0,
-    civicLevel: pointsData.level || 'Field Officer'
+    civicLevel: pointsData.level || 'Field Officer',
+    leaderboardRank: myRank > 0 ? myRank : null,
+    totalOfficersRanked: leaderboardItems.length
+  };
+}
+
+async function getOfficerPoints(officerId) {
+  const pointsData = await pointService.getUserPoints(officerId);
+  const badges = await pointService.getUserBadges(officerId);
+  const history = await pointService.getPointHistory(officerId, { limit: 5 });
+
+  return {
+    points: pointsData.points || 0,
+    level: pointsData.level || 'Field Officer',
+    badgeIcon: pointsData.badgeIcon || '🛡️',
+    badges: badges || [],
+    recentTransactions: history || []
   };
 }
 
 async function getOfficerReputation(officerId) {
   const pointsData = await pointService.getUserPoints(officerId);
-  const leaderboard = await pointService.getOfficerLeaderboard({ limit: 50 });
-  const myRank = leaderboard.findIndex(item => item.user_id === officerId) + 1;
+  let leaderboardItems = [];
+  try {
+    const lRes = await pointService.getOfficerLeaderboard({ limit: 50 });
+    leaderboardItems = Array.isArray(lRes) ? lRes : (lRes.items || []);
+  } catch (e) {
+    leaderboardItems = [];
+  }
+  const myRank = leaderboardItems.findIndex(item => (item.officer_id || item.user_id) === officerId) + 1;
 
   return {
     points: pointsData.points || 0,
     level: pointsData.level || 'Field Officer',
     badgeIcon: pointsData.badgeIcon || '🛡️',
     rank: myRank > 0 ? myRank : null,
-    totalOfficersRanked: leaderboard.length
+    totalOfficersRanked: leaderboardItems.length
   };
 }
 
-async function getNearbyOperationalIssues(officerId) {
-  // Find officer department and nearby open complaints
+async function getOfficerComplaintDetails(officerId, complaintId) {
+  const rawId = parseInt(String(complaintId).replace(/[^0-9]/g, ''), 10);
+  if (isNaN(rawId)) return { error: 'Invalid complaint ID format' };
+
+  const query = `
+    SELECT c.*, d.name AS department_name, uo.name AS assigned_officer_name
+    FROM complaints c
+    LEFT JOIN departments d ON d.id = c.department_id
+    LEFT JOIN users uo ON uo.id = c.officer_id
+    WHERE c.id = $1;
+  `;
+  const res = await db.query(query, [rawId]);
+  const c = res.rows[0];
+  if (!c) return { error: `Complaint #${complaintId} not found` };
+
+  // RBAC check: officer can access if assigned to them or if belonging to their department
+  const userRes = await db.query('SELECT department_id FROM users WHERE id = $1', [officerId]);
+  const officerDeptId = userRes.rows[0]?.department_id;
+
+  const isAssigned = c.officer_id === officerId;
+  const isDeptMatch = officerDeptId && c.department_id === officerDeptId;
+
+  if (!isAssigned && !isDeptMatch) {
+    return { error: 'Access restricted: You are not authorized to view this complaint file.' };
+  }
+
+  const timeline = await complaintRepo.getTimeline(rawId);
+  const scored = calculateComplaintPriority(c);
+
+  return {
+    ...scored,
+    isAssignedToCaller: isAssigned,
+    timeline: (timeline.history || []).map(h => ({
+      from: h.status_from,
+      to: h.status_to,
+      note: h.note,
+      date: h.created_at
+    }))
+  };
+}
+
+async function getNearbyIssuesForOfficer(officerId) {
   const officerRes = await db.query('SELECT department_id FROM users WHERE id = $1', [officerId]);
   const deptId = officerRes.rows[0]?.department_id;
 
@@ -354,6 +536,21 @@ async function getNearbyOperationalIssues(officerId) {
   `;
   const res = await db.query(query, deptId ? [deptId] : []);
   return res.rows.map(sanitizeComplaint);
+}
+
+async function getOfficerTodaySummary(officerId) {
+  const workload = await getOfficerWorkload(officerId);
+  const priority = await getOfficerPriorityCases(officerId);
+  const sla = await getOfficerSlaAlerts(officerId);
+  const perf = await getOfficerPerformance(officerId);
+
+  return {
+    workload,
+    topPriorityCases: priority.assignedPriorityCases.slice(0, 3),
+    unassignedDeptCases: priority.unassignedDepartmentCases.slice(0, 3),
+    slaAlerts: sla,
+    performance: perf
+  };
 }
 
 // ==========================================
@@ -536,11 +733,17 @@ module.exports = {
   getCivicGuidelines,
   // Officer
   getOfficerAssignments,
+  getOfficerWorkload,
   getOfficerPriorityCases,
+  getOfficerSlaAlerts,
   getOfficerSLARisks,
+  getOfficerDepartmentWorkload,
   getOfficerPerformance,
+  getOfficerPoints,
   getOfficerReputation,
-  getNearbyOperationalIssues,
+  getOfficerComplaintDetails,
+  getNearbyIssuesForOfficer,
+  getOfficerTodaySummary,
   // Admin
   getUnresolvedByCategory,
   getCriticalToday,

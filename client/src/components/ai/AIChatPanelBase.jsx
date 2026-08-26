@@ -1,79 +1,90 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Sparkles, X, History, Plus, RefreshCw, AlertCircle, Maximize2, Minimize2 } from 'lucide-react';
-import { aiApi } from '../../services/ai';
+import {
+  Sparkles,
+  X,
+  Send,
+  Minimize2,
+  Maximize2,
+  History,
+  Plus,
+  RefreshCw,
+  AlertCircle
+} from 'lucide-react';
 import AIMessage from './AIMessage';
 import AITypingIndicator from './AITypingIndicator';
 import AIQuickActions from './AIQuickActions';
 import AIConversationList from './AIConversationList';
+import * as aiApi from '../../services/ai';
 
 export default function AIChatPanelBase({
-  persona = 'citizen',
-  title = 'Civic GreenNet Assistant',
-  subtitle = 'Powered by Groq Intelligence',
-  accentColor = 'emerald',
-  complaintId = null,
-  isOpen = true,
+  isOpen,
   onClose,
-  fullPage = false,
+  title = 'AI Copilot',
+  subtitle = 'Operational Intelligence Assistant',
+  persona = 'citizen', // 'citizen' | 'officer' | 'admin'
+  accentColor = 'cyan', // 'cyan' | 'emerald' | 'amber'
+  complaintId = null,
+  sendMessageFn = null,
   customQuickActions = null,
-  sendMessageFn = null
+  fullScreen = false
 }) {
-  const [conversations, setConversations] = useState([]);
-  const [activeConvId, setActiveConvId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const [expanded, setExpanded] = useState(fullScreen);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [conversations, setConversations] = useState([]);
+  const [activeConvId, setActiveConvId] = useState(null);
   const [errorMessage, setErrorMessage] = useState(null);
-  const [expanded, setExpanded] = useState(fullPage);
-
   const messagesEndRef = useRef(null);
   const lastSentTextRef = useRef('');
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, loading]);
 
   useEffect(() => {
     if (isOpen) {
       loadConversations();
     }
-  }, [isOpen, persona]);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, loading]);
+  }, [isOpen]);
 
   const loadConversations = async () => {
     try {
-      const list = await aiApi.getConversations();
-      setConversations(list || []);
-      if (list && list.length > 0 && !activeConvId) {
-        loadConversationMessages(list[0].id);
-      }
+      const data = await aiApi.getConversations({ limit: 15 });
+      setConversations(data.conversations || []);
     } catch (err) {
-      console.error('Failed to load AI conversations:', err);
+      console.warn('Could not load chat conversations history:', err.message);
     }
   };
 
   const loadConversationMessages = async (convId) => {
     try {
       setLoading(true);
-      setActiveConvId(convId);
-      const data = await aiApi.getConversation(convId);
-      setMessages(data?.messages || []);
       setErrorMessage(null);
+      const data = await aiApi.getConversation(convId);
+      setActiveConvId(convId);
+      setMessages(data.messages || []);
     } catch (err) {
-      setErrorMessage('Unable to load chat history right now.');
+      console.error('Failed to load conversation messages:', err);
+      setErrorMessage('Could not load chat history for this session.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSendMessage = async (textToSend = null) => {
+  const handleSendMessage = async (textToSend) => {
     const text = (textToSend || inputMessage).trim();
     if (!text || loading) return;
 
-    lastSentTextRef.current = text;
     setInputMessage('');
     setErrorMessage(null);
+    lastSentTextRef.current = text;
 
     const tempUserMsg = {
       id: `temp-${Date.now()}`,
@@ -82,21 +93,13 @@ export default function AIChatPanelBase({
       created_at: new Date().toISOString()
     };
 
-    // If retrying, remove the previous temp message if it had the same text
-    if (textToSend) {
-      setMessages((prev) => {
-        const filtered = prev.filter((m) => !String(m.id).startsWith('temp-'));
-        return [...filtered, tempUserMsg];
-      });
-    } else {
-      setMessages((prev) => [...prev, tempUserMsg]);
-    }
+    setMessages((prev) => [...prev, tempUserMsg]);
     setLoading(true);
 
     try {
       const sendFn = sendMessageFn || (
-        persona === 'officer' 
-          ? aiApi.sendOfficerMessage 
+        persona === 'officer'
+          ? aiApi.sendOfficerMessage
           : (persona === 'admin' ? aiApi.sendAdminMessage : aiApi.sendCitizenMessage)
       );
 
@@ -192,30 +195,30 @@ export default function AIChatPanelBase({
   return (
     <AnimatePresence>
       <motion.div
-        initial={{ opacity: 0, y: 20, scale: 0.95 }}
+        initial={{ opacity: 0, y: 30, scale: 0.96 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: 20, scale: 0.95 }}
+        exit={{ opacity: 0, y: 30, scale: 0.96 }}
         transition={{ duration: 0.2 }}
-        className={`fixed z-50 flex flex-col bg-slate-900 border border-slate-800 shadow-2xl rounded-2xl overflow-hidden ${
+        className={`fixed z-50 flex flex-col bg-slate-900 border border-slate-800 shadow-2xl rounded-2xl overflow-hidden backdrop-blur-xl ${
           expanded
-            ? 'inset-4 sm:inset-6 md:inset-10'
-            : 'bottom-4 right-4 sm:bottom-6 sm:right-6 w-[94vw] sm:w-[420px] md:w-[460px] h-[600px] max-h-[85vh]'
+            ? 'inset-3 sm:inset-6 md:inset-10'
+            : 'bottom-4 right-4 w-[calc(100vw-2rem)] sm:w-[460px] h-[640px] max-h-[85vh]'
         }`}
       >
-        {/* Top Header Bar */}
-        <div className="flex items-center justify-between px-4 py-3.5 bg-slate-950/80 border-b border-slate-800 backdrop-blur-md">
+        {/* Header */}
+        <div className="px-4 py-3 bg-slate-950/80 border-b border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-cyan-950 border border-cyan-700/60 flex items-center justify-center text-cyan-400 shadow-inner">
-              <Sparkles className="w-4 h-4 animate-pulse" />
+            <div className="w-8 h-8 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+              <Sparkles className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="font-bold text-sm text-slate-100 flex items-center gap-2">
-                <span>{title}</span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-700/50 font-semibold tracking-wider uppercase">
-                  Live DB
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-sm text-slate-100">{title}</h3>
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                  LIVE DB
                 </span>
-              </h3>
-              <p className="text-[11px] text-slate-400">{subtitle}</p>
+              </div>
+              <p className="text-[11px] text-slate-400 truncate max-w-[200px] sm:max-w-[280px]">{subtitle}</p>
             </div>
           </div>
 
@@ -225,7 +228,7 @@ export default function AIChatPanelBase({
               className={`p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition ${
                 historyOpen ? 'bg-slate-800 text-cyan-400' : ''
               }`}
-              title="Conversation history"
+              title="Chat History"
             >
               <History className="w-4 h-4" />
             </button>
@@ -255,7 +258,7 @@ export default function AIChatPanelBase({
           </div>
         </div>
 
-        {/* Main Content Area (Messages or History Drawer) */}
+        {/* Main Content Area */}
         <div className="relative flex-1 flex overflow-hidden">
           {/* History Sidebar/Drawer */}
           {historyOpen && (
@@ -264,9 +267,9 @@ export default function AIChatPanelBase({
                 <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">Chat Sessions</span>
                 <button
                   onClick={() => setHistoryOpen(false)}
-                  className="p-1 text-slate-400 hover:text-slate-200 rounded"
+                  className="text-xs text-cyan-400 hover:underline"
                 >
-                  <X className="w-3.5 h-3.5" />
+                  Back to Chat
                 </button>
               </div>
               <AIConversationList
@@ -294,14 +297,6 @@ export default function AIChatPanelBase({
                 <p className="text-xs text-slate-400 max-w-xs mb-4">
                   Ask questions about live municipal records, SLAs, and performance. All information is retrieved directly from the verified database.
                 </p>
-
-                {/* Quick Action Chips */}
-                <AIQuickActions
-                  persona={persona}
-                  complaintId={complaintId}
-                  onSelect={handleQuickAction}
-                  customActions={customQuickActions}
-                />
               </div>
             )}
 
@@ -324,7 +319,7 @@ export default function AIChatPanelBase({
                   {lastSentTextRef.current && (
                     <button
                       onClick={() => handleSendMessage(lastSentTextRef.current)}
-                      className="mt-1.5 inline-flex items-center gap-1 px-2 py-0.5 bg-rose-900/60 hover:bg-rose-800 border border-rose-700/60 rounded text-[11px] font-medium text-rose-100 transition"
+                      className="mt-1.5 inline-flex items-center gap-1 px-2 py-0.5 bg-rose-900/60 hover:bg-rose-800 border border-rose-700/60 rounded text-[11px] font-medium text-rose-100 transition cursor-pointer"
                     >
                       <RefreshCw className="w-3 h-3" />
                       <span>Retry</span>
@@ -337,6 +332,14 @@ export default function AIChatPanelBase({
             <div ref={messagesEndRef} />
           </div>
         </div>
+
+        {/* Quick Action Chips Bar */}
+        <AIQuickActions
+          persona={persona}
+          onSelect={handleQuickAction}
+          customActions={customQuickActions}
+          loading={loading}
+        />
 
         {/* Input Bar */}
         <div className="p-3 bg-slate-950/90 border-t border-slate-800">
@@ -351,14 +354,14 @@ export default function AIChatPanelBase({
               type="text"
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
-              placeholder="Ask anything..."
+              placeholder="Ask anything (e.g. priority complaints, SLA alerts, performance)..."
               disabled={loading}
               className="flex-1 bg-slate-900 border border-slate-800 focus:border-cyan-500 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 transition"
             />
             <button
               type="submit"
               disabled={!inputMessage.trim() || loading}
-              className="p-2.5 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 disabled:hover:bg-cyan-600 text-white rounded-xl shadow-md transition flex items-center justify-center"
+              className="p-2.5 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 disabled:hover:bg-cyan-600 text-white rounded-xl shadow-md transition flex items-center justify-center cursor-pointer"
               title="Send Message"
             >
               <Send className="w-4 h-4" />

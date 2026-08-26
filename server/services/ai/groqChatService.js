@@ -4,8 +4,18 @@ const logger = require('../../utils/logger');
 const { AI_ERROR_CODES, CopilotError } = require('./aiErrors');
 
 const GROQ_BASE = 'https://api.groq.com/openai/v1';
-const PRIMARY_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
-const FALLBACK_MODEL = process.env.GROQ_FALLBACK_MODEL || 'llama-3.1-8b-instant';
+
+// Priority order of models to try
+const CANDIDATE_MODELS = [
+  process.env.GROQ_MODEL,
+  'qwen/qwen3.8-27b',
+  'openai/gpt-oss-120b',
+  'openai/gpt-oss-20b',
+  'llama-3.3-70b-versatile',
+  'llama-3.1-8b-instant'
+].filter(Boolean);
+
+let verifiedWorkingModel = CANDIDATE_MODELS[0] || 'qwen/qwen3.8-27b';
 
 function isConfigured() {
   return !!(GROQ && GROQ.API_KEY);
@@ -14,18 +24,22 @@ function isConfigured() {
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * Call Groq API with retries and model fallback
+ * Call Groq API with automatic model discovery and retries
  */
-async function callGroqWithRetry(payload, maxAttempts = 2) {
+async function callGroqWithRetry(payload, maxAttempts = 3) {
   if (!isConfigured()) {
     throw new CopilotError(AI_ERROR_CODES.SERVICE_UNAVAILABLE, 'Groq API key not configured');
   }
 
-  let attempt = 0;
-  let currentModel = payload.model || PRIMARY_MODEL;
+  const modelsToTry = [
+    verifiedWorkingModel,
+    ...CANDIDATE_MODELS.filter(m => m !== verifiedWorkingModel)
+  ];
 
-  while (attempt < maxAttempts) {
-    attempt++;
+  let lastError = null;
+
+  for (let i = 0; i < Math.min(modelsToTry.length, maxAttempts); i++) {
+    const currentModel = modelsToTry[i];
     try {
       const res = await axios.post(
         `${GROQ_BASE}/chat/completions`,
@@ -38,30 +52,25 @@ async function callGroqWithRetry(payload, maxAttempts = 2) {
           timeout: 10000
         }
       );
-      return res.data;
+
+      if (res.data?.choices?.[0]?.message?.content) {
+        verifiedWorkingModel = currentModel;
+        return res.data;
+      }
     } catch (err) {
+      lastError = err;
       const status = err.response?.status;
       const errorMsg = err.response?.data?.error?.message || err.message;
-
-      logger.warn(`[Groq API] Model ${currentModel} attempt ${attempt} failed (Status: ${status}): ${errorMsg}`);
-
-      if (attempt < maxAttempts) {
-        currentModel = FALLBACK_MODEL;
-        await delay(500 * attempt);
-        continue;
-      }
+      logger.warn(`[Groq API] Model ${currentModel} failed (Status: ${status}): ${errorMsg}`);
 
       if (status === 429) {
-        throw new CopilotError(AI_ERROR_CODES.AI_RATE_LIMIT, 'AI provider rate limit reached');
+        await delay(800 * (i + 1));
       }
-
-      if (status >= 500 || err.code === 'ECONNABORTED' || err.message.includes('timeout')) {
-        throw new CopilotError(AI_ERROR_CODES.AI_TIMEOUT, 'AI service request timed out');
-      }
-
-      throw new CopilotError(AI_ERROR_CODES.SERVICE_UNAVAILABLE, `Groq API failed: ${errorMsg}`);
     }
   }
+
+  const errorMsg = lastError?.response?.data?.error?.message || lastError?.message || 'All candidate models failed';
+  throw new CopilotError(AI_ERROR_CODES.SERVICE_UNAVAILABLE, `Groq API failed: ${errorMsg}`);
 }
 
 /**
@@ -79,11 +88,10 @@ function sanitizeAiResponse(text) {
 }
 
 /**
- * Generate structured text or JSON from Groq for a role
+ * Generate structured text or JSON from Groq
  */
 async function generateGroqCompletion({ systemPrompt, userMessage, jsonMode = false, temperature = 0.2, maxTokens = 800 }) {
   const payload = {
-    model: PRIMARY_MODEL,
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userMessage }
@@ -119,6 +127,6 @@ module.exports = {
   callGroqWithRetry,
   generateGroqCompletion,
   sanitizeAiResponse,
-  PRIMARY_MODEL,
-  FALLBACK_MODEL
+  PRIMARY_MODEL: verifiedWorkingModel,
+  FALLBACK_MODEL: 'qwen/qwen3.8-27b'
 };

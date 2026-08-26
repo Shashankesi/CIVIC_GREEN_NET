@@ -1,21 +1,31 @@
 /**
- * Standardized AI Response Formatter & Level-2 Deterministic Fallbacks
+ * Standardized AI Copilot Response Schema:
+ * {
+ *   answer: string (Markdown/HTML-safe text)
+ *   summary: string (Short 1-2 sentence executive briefing)
+ *   data: object | array (Raw verified database records)
+ *   recommendations: string[] (Actionable next steps)
+ *   sources: string[] (Attribution)
+ *   intent: string
+ *   confidence: number
+ *   cards: object[] (Optional complaint cards)
+ * }
  */
 
 function formatCopilotResponse({
-  answer,
+  answer = '',
   summary = null,
-  data = [],
+  data = null,
   recommendations = [],
-  sources = ['Civic GreenNet PostgreSQL Database'],
-  intent = 'GENERAL_QUERY',
+  sources = ['PostgreSQL Live Database'],
+  intent = 'GENERAL',
   confidence = 1.0,
   cards = []
 }) {
   return {
-    answer: answer || 'Here is the current municipal data.',
-    summary: summary || (typeof answer === 'string' ? answer.slice(0, 120) : null),
-    data: Array.isArray(data) ? data : [data],
+    answer: answer ? answer.trim() : '',
+    summary: summary || (answer ? answer.slice(0, 160).replace(/\n/g, ' ') + '...' : null),
+    data,
     recommendations: Array.isArray(recommendations) ? recommendations : [],
     sources,
     intent,
@@ -30,125 +40,103 @@ function formatCopilotResponse({
 
 function formatCitizenFallback(intent, dbData, userInput = '') {
   switch (intent) {
-    case 'MY_COMPLAINTS': {
-      const list = Array.isArray(dbData) ? dbData : [];
-      const active = list.filter(c => !['resolved', 'closed'].includes(c.status));
+    case 'MY_COMPLAINTS':
+    case 'COMPLAINT_STATUS': {
+      const list = Array.isArray(dbData) ? dbData : (dbData?.complaints || []);
       if (list.length === 0) {
         return formatCopilotResponse({
-          answer: 'You have not submitted any complaints yet. If you notice a civic issue like road damage or sanitation problems, you can file a new report easily.',
+          answer: 'You currently have **0 active civic complaints** filed in the system. If you notice an issue like a pothole, broken streetlight, or garbage overflow, you can file a new complaint easily from the citizen portal.',
           summary: '0 active complaints found.',
-          intent,
-          recommendations: ['Submit a new complaint with clear photos and location']
-        });
-      }
-
-      const oldest = active.slice().sort((a, b) => new Date(a.created_at) - new Date(b.created_at))[0];
-      let lines = [`You currently have **${active.length}** active complaint(s):`];
-      active.slice(0, 5).forEach(c => {
-        lines.push(`• **${c.id}** — ${c.title} (${c.category}) — *${c.status.toUpperCase()}*`);
-      });
-
-      if (oldest) {
-        lines.push(`\nYour oldest unresolved case is **${oldest.id}** (${oldest.title}).`);
-      }
-
-      return formatCopilotResponse({
-        answer: lines.join('\n'),
-        summary: `${active.length} active complaints.`,
-        data: active,
-        cards: active.slice(0, 5),
-        intent,
-        recommendations: oldest ? [`Track status of ${oldest.id} in your portal`] : []
-      });
-    }
-
-    case 'COMPLAINT_STATUS': {
-      const c = dbData;
-      if (!c) {
-        return formatCopilotResponse({
-          answer: 'I could not find a complaint matching that ID in your submitted records. Please verify the CGN ID number.',
-          summary: 'Complaint not found in your account.',
+          data: [],
           intent
         });
       }
 
-      const overdueText = c.isOverdue ? '⚠️ SLA Breached (Overdue)' : (c.hoursRemaining ? `SLA Due in ${c.hoursRemaining} hours` : 'Within SLA window');
       const lines = [
-        `**Complaint ${c.id} Details:**`,
-        `• **Title:** ${c.title}`,
-        `• **Category:** ${c.category}`,
-        `• **Current Status:** ${c.status.toUpperCase()}`,
-        `• **Severity:** ${c.severity || 'Moderate'}`,
-        `• **SLA Target:** ${overdueText}`,
-        `• **Assigned Department:** ${c.department_name || 'Central Municipal Operations'}`
+        `You have **${list.length} complaint(s)** registered with the municipal administration:`,
+        ''
       ];
 
-      if (c.timeline && c.timeline.length > 0) {
-        const lastStep = c.timeline[c.timeline.length - 1];
-        lines.push(`\n**Latest Timeline Update:** Status changed to *${lastStep.to}* on ${new Date(lastStep.date).toLocaleDateString()}`);
-      }
+      list.forEach((c, idx) => {
+        const slaText = c.isOverdue
+          ? '🔴 **Overdue**'
+          : (c.hoursRemaining ? `⏳ Due in **${c.hoursRemaining}h**` : '⏳ In SLA timeframe');
+        lines.push(`${idx + 1}. **${c.id}** — *${c.title}*`);
+        lines.push(`   • Category: **${c.category}** | Status: **${c.status.toUpperCase()}**`);
+        lines.push(`   • Priority: **${c.priority.toUpperCase()}** | Timeline: ${slaText}`);
+        if (c.assigned_officer_name) {
+          lines.push(`   • Assigned Officer: **${c.assigned_officer_name}**`);
+        }
+      });
 
       return formatCopilotResponse({
         answer: lines.join('\n'),
-        summary: `Status of ${c.id}: ${c.status}`,
-        data: c,
-        cards: [c],
+        summary: `${list.length} active complaints found.`,
+        data: list,
+        cards: list.slice(0, 5),
         intent,
-        recommendations: c.isOverdue ? ['Follow up with the municipal desk via contact support'] : []
+        recommendations: [
+          'Click any complaint ID to view real-time field progress.',
+          'You can add additional photos or evidence if required.'
+        ]
       });
     }
 
-    case 'MY_POINTS':
-    case 'MY_RANK': {
-      const p = dbData || {};
+    case 'MY_REPUTATION':
+    case 'MY_POINTS': {
+      const rep = dbData || {};
       const lines = [
-        `You currently have **${p.points || 0} civic points** (${p.badgeIcon || '🌱'} *${p.civicLevel || 'New Contributor'}*).`,
-        `\n**Civic Ranking & Impact:**`,
-        `• Active Badges Earned: ${p.badges ? p.badges.length : 0}`,
-        `\n**How to earn more points:**`,
-        `• Submit verified complaints: **+20 points**`,
-        `• Successful complaint resolution: **+30 points**`,
-        `• Helpful photos & GPS evidence: **+5 points**`,
-        `\n*Note: Submitting confirmed false complaints incurs a penalty of -30 points.*`
+        `**Your Civic Reputation Profile:**`,
+        `• Current Balance: **${rep.points || 0} Civic Points**`,
+        `• Contributor Level: ${rep.badgeIcon || '🌱'} **${rep.civicLevel || 'New Contributor'}**`,
+        `• Active Badges: **${(rep.badges || []).length} earned**`,
+        '',
+        `**How to earn more points:**`,
+        `• Submit verified civic complaints: **+10 pts**`,
+        `• Confirm resolved issues: **+15 pts**`,
+        `• Provide accurate GPS location: **+5 pts**`
       ];
 
       return formatCopilotResponse({
         answer: lines.join('\n'),
-        summary: `${p.points || 0} points, Level: ${p.civicLevel}`,
-        data: p,
-        intent,
-        recommendations: ['Upload clear photos when reporting to earn helpful evidence bonuses']
+        summary: `Total Points: ${rep.points || 0} (${rep.civicLevel})`,
+        data: rep,
+        intent
       });
     }
 
-    case 'CIVIC_GUIDANCE': {
+    case 'SLA_TIMELINES': {
       const g = dbData || {};
       const lines = [
-        `**Civic Reporting Guide: ${g.category}**`,
-        `• **Resolution SLA:** Typically addressed within **${g.slaHours} hours**`,
-        `• **Best Practice:** ${g.advice}`,
-        `• **Responsible Unit:** ${g.contact}`
+        `**Municipal SLA Response Guidelines:**`,
+        `• Category: **${g.category || 'General Municipal'}**`,
+        `• Resolution SLA: **${g.slaHours || 48} hours**`,
+        `• Responsible Department: **${g.contact || 'Central Operations'}**`,
+        '',
+        `💡 *Recommendation:* ${g.advice || 'Include clear location and landmark details.'}`
       ];
+
       return formatCopilotResponse({
         answer: lines.join('\n'),
-        summary: `Reporting guidelines for ${g.category}`,
+        summary: `Standard SLA: ${g.slaHours || 48} hours`,
         data: g,
         intent
       });
     }
 
-    case 'PUBLIC_STATISTICS': {
+    case 'CITY_STATS': {
       const s = dbData || {};
       const lines = [
-        `**City-wide Civic Operations Snapshot:**`,
-        `• Total Complaints Registered: **${s.total_complaints || 0}**`,
+        `**City-Wide Civic Operations Snapshot:**`,
+        `• Total Reported Issues: **${s.total_complaints || 0}**`,
         `• Successfully Resolved: **${s.resolved_complaints || 0}**`,
-        `• Current Active Issues: **${s.active_complaints || 0}**`,
+        `• Active Cases in Field: **${s.active_complaints || 0}**`,
         `• Municipal Resolution Rate: **${s.resolution_rate || 0}%**`
       ];
+
       return formatCopilotResponse({
         answer: lines.join('\n'),
-        summary: `Resolution rate: ${s.resolution_rate}%`,
+        summary: `City Resolution Rate: ${s.resolution_rate || 0}%`,
         data: s,
         intent
       });
@@ -156,9 +144,9 @@ function formatCitizenFallback(intent, dbData, userInput = '') {
 
     default: {
       return formatCopilotResponse({
-        answer: 'I can assist you with your active complaints, checking case statuses, viewing your civic points, or learning municipal resolution timelines.',
+        answer: 'Hello! I am your Civic Assistant. I can help you track your complaints, check resolution timelines, explain municipal SLAs, and view your civic reputation score. How can I help you today?',
         summary: 'Civic Assistant ready.',
-        intent: 'GENERAL_GUIDANCE'
+        intent: 'GENERAL_ASSISTANCE'
       });
     }
   }
@@ -170,100 +158,192 @@ function formatCitizenFallback(intent, dbData, userInput = '') {
 
 function formatOfficerFallback(intent, dbData, userInput = '') {
   switch (intent) {
-    case 'MY_PRIORITY_CASES':
-    case 'WHAT_TO_HANDLE_FIRST': {
-      const cases = Array.isArray(dbData) ? dbData : [];
-      if (cases.length === 0) {
+    case 'GREETING': {
+      return formatCopilotResponse({
+        answer: `Hello! I'm your **Officer Copilot**. I can help you with:\n• **Priority Complaints** — see what needs attention first\n• **SLA Alerts** — identify overdue or at-risk cases\n• **Your Workload** — summary of your active assignments\n• **Department Workload** — departmental queue stats\n• **Performance & Score** — your resolution rate and compliance\n• **Officer Points & Rank** — your leaderboard position\n\nWhat would you like to check?`,
+        summary: 'Officer Copilot ready to assist.',
+        intent
+      });
+    }
+
+    case 'HELP': {
+      return formatCopilotResponse({
+        answer: `**Officer Copilot Quick Guide:**\n• Ask: *"Show my highest priority complaints"* to see deterministically ranked cases.\n• Ask: *"Which complaints are close to SLA breach?"* for urgent deadlines.\n• Ask: *"How is my performance?"* for your compliance and resolution rate.\n• Ask: *"Show department workload"* for department queue metrics.\n• Ask: *"Tell me about complaint CGN-XXXXX"* for a specific case file.`,
+        summary: 'Help and usage instructions.',
+        intent
+      });
+    }
+
+    case 'PRIORITY_CASES':
+    case 'MY_PRIORITY_CASES': {
+      const p = dbData || {};
+      const cases = p.assignedPriorityCases || (Array.isArray(dbData) ? dbData : []);
+      const unassigned = p.unassignedDepartmentCases || [];
+
+      if (cases.length === 0 && unassigned.length === 0) {
         return formatCopilotResponse({
-          answer: 'You have zero active assigned complaints requiring prioritization right now. Great job keeping your queue clear!',
-          summary: 'No active assignments pending.',
+          answer: 'You have **0 active assigned complaints** in your queue, and no unassigned emergency complaints in your department. All assigned cases have been resolved.',
+          summary: 'No active priority cases.',
+          data: p,
           intent
         });
       }
 
-      const top = cases[0];
-      const lines = [`Based on deterministic severity, SLA deadline, and case age, here is your prioritization ranking:`];
+      const lines = [];
+      if (cases.length > 0) {
+        lines.push(`**Highest-Priority Active Assignments (${cases.length} cases):**\n`);
+        cases.slice(0, 5).forEach((c, idx) => {
+          const reasonText = (c.reasons || []).length > 0 ? ` (${c.reasons[0]})` : '';
+          const deadlineText = c.isOverdue
+            ? `🔴 **Overdue by ${c.hoursOverdue || 1}h**`
+            : (c.hoursRemaining ? `⏳ **Due in ${c.hoursRemaining}h**` : '⏳ In SLA');
 
-      cases.slice(0, 3).forEach((c, idx) => {
-        const riskText = c.isOverdue 
-          ? `⚠️ Overdue by ${c.hoursOverdue || 1}h` 
-          : (c.hoursRemaining ? `Due in ${c.hoursRemaining}h` : 'On track');
-        lines.push(`\n**${idx + 1}. ${c.id} — ${c.title}**`);
-        lines.push(`• **Severity:** ${c.severity || c.priority}`);
-        lines.push(`• **SLA Status:** ${riskText}`);
-        lines.push(`• **Priority Score:** ${c.score} pts`);
-        if (c.reasons && c.reasons.length > 0) {
-          lines.push(`• **Reason:** ${c.reasons.join(', ')}`);
-        }
-      });
+          lines.push(`${idx + 1}. **${c.id}** — *${c.title}*`);
+          lines.push(`   • Category: **${c.category}** | Severity: **${(c.severity || c.priority).toUpperCase()}**`);
+          lines.push(`   • SLA Status: ${deadlineText}`);
+          lines.push(`   • Priority Score: **${c.score || 0} pts**${reasonText}`);
+        });
 
-      lines.push(`\n**Recommendation:** Prioritize **${top.id}** first because of its higher urgency score.`);
+        const top = cases[0];
+        lines.push(`\n**Recommended First Action:**`);
+        lines.push(`Begin investigation on **${top.id}** (*${top.title}*) because it carries the highest operational priority score (**${top.score} pts**) based on severity and SLA timeline.`);
+      } else if (unassigned.length > 0) {
+        lines.push(`Your personal assigned queue has **0 active complaints**, but there are **${unassigned.length} unassigned open cases** in your department:\n`);
+        unassigned.slice(0, 3).forEach((c, idx) => {
+          lines.push(`${idx + 1}. **${c.id}** — *${c.title}* [${c.priority.toUpperCase()}]`);
+        });
+        lines.push(`\nYou may assign these cases to yourself from the Department Queue.`);
+      }
 
       return formatCopilotResponse({
         answer: lines.join('\n'),
-        summary: `Top priority case: ${top.id} (${top.title})`,
-        data: cases,
-        cards: cases.slice(0, 3),
+        summary: cases.length > 0 ? `Top priority: ${cases[0].id}` : 'Queue clear',
+        data: p,
+        cards: cases.slice(0, 4),
         intent,
-        recommendations: [`Inspect site for ${top.id} and update status to in_progress`]
+        recommendations: cases.length > 0 ? [`Dispatch to ${cases[0].id} immediately`] : ['Claim unassigned department cases if capacity permits']
       });
     }
 
+    case 'SLA_ALERTS':
     case 'MY_SLA_RISK': {
-      const risks = Array.isArray(dbData) ? dbData : [];
-      const overdue = risks.filter(r => r.isOverdue);
-      const dueSoon = risks.filter(r => !r.isOverdue);
+      const a = dbData || {};
+      const overdue = a.overdue || [];
+      const due2h = a.dueWithin2Hours || [];
+      const due6h = a.dueWithin6Hours || [];
+      const due24h = a.dueWithin24Hours || [];
+      const allRisks = [...overdue, ...due2h, ...due6h, ...due24h];
 
-      if (risks.length === 0) {
+      if (allRisks.length === 0) {
         return formatCopilotResponse({
-          answer: 'All of your assigned complaints are well within their SLA deadlines. No immediate SLA breach risk.',
-          summary: '0 SLA breach risks.',
+          answer: 'Good news! **0 of your assigned complaints** are currently overdue or approaching SLA breach. All active cases are safely within operational timelines.',
+          summary: '0 SLA alerts. Operations normal.',
+          data: a,
           intent
         });
       }
 
       const lines = [
-        `**SLA Risk Alert:** You have **${risks.length}** complaint(s) requiring urgent attention:`,
-        `• Overdue / Breached: **${overdue.length}**`,
-        `• Due in next 24 hours: **${dueSoon.length}**`
+        `**SLA Risk Assessment (${allRisks.length} cases needing attention):**\n`
       ];
 
-      risks.slice(0, 4).forEach(c => {
-        const timeText = c.isOverdue ? `Overdue by ${c.hoursOverdue}h` : `Due in ${c.hoursRemaining}h`;
-        lines.push(`• **${c.id}** (${c.title}) — *${timeText}*`);
-      });
+      if (overdue.length > 0) {
+        lines.push(`🔴 **OVERDUE CASES (${overdue.length}):**`);
+        overdue.forEach(c => {
+          lines.push(`• **${c.id}** — ${c.title} (Overdue by **${c.hoursOverdue || 1}h**)`);
+        });
+        lines.push('');
+      }
+
+      if (due2h.length > 0) {
+        lines.push(`🟠 **CRITICAL: DUE WITHIN 2 HOURS (${due2h.length}):**`);
+        due2h.forEach(c => {
+          lines.push(`• **${c.id}** — ${c.title} (SLA deadline in **${c.hoursRemaining}h**)`);
+        });
+        lines.push('');
+      }
+
+      if (due6h.length > 0) {
+        lines.push(`🟡 **URGENT: DUE WITHIN 6 HOURS (${due6h.length}):**`);
+        due6h.forEach(c => {
+          lines.push(`• **${c.id}** — ${c.title} (SLA deadline in **${c.hoursRemaining}h**)`);
+        });
+        lines.push('');
+      }
+
+      if (due24h.length > 0) {
+        lines.push(`🔵 **DUE WITHIN 24 HOURS (${due24h.length}):**`);
+        due24h.slice(0, 3).forEach(c => {
+          lines.push(`• **${c.id}** — ${c.title} (SLA in **${c.hoursRemaining}h**)`);
+        });
+      }
 
       return formatCopilotResponse({
         answer: lines.join('\n'),
-        summary: `${overdue.length} overdue, ${dueSoon.length} due soon.`,
-        data: risks,
-        cards: risks.slice(0, 4),
+        summary: `${overdue.length} overdue, ${due2h.length} due < 2h.`,
+        data: a,
+        cards: allRisks.slice(0, 4),
         intent,
-        recommendations: overdue.length > 0 ? [`Resolve overdue case ${overdue[0].id} immediately`] : []
+        recommendations: overdue.length > 0
+          ? [`Immediately update resolution status on overdue case ${overdue[0].id}`]
+          : [`Attend to imminent deadline case ${due2h[0]?.id || allRisks[0]?.id}`]
       });
     }
 
     case 'MY_WORKLOAD':
     case 'MY_ASSIGNMENTS': {
-      const assignments = Array.isArray(dbData) ? dbData : [];
-      const open = assignments.filter(a => a.status === 'open' || a.status === 'assigned');
-      const inProg = assignments.filter(a => a.status === 'in_progress');
+      const w = dbData?.totalActive !== undefined ? dbData : {
+        totalActive: Array.isArray(dbData) ? dbData.length : 0,
+        pendingStartCount: Array.isArray(dbData) ? dbData.filter(x => x.status === 'open' || x.status === 'assigned').length : 0,
+        inProgressCount: Array.isArray(dbData) ? dbData.filter(x => x.status === 'in_progress').length : 0,
+        overdueCount: Array.isArray(dbData) ? dbData.filter(x => x.isOverdue).length : 0,
+        criticalCount: Array.isArray(dbData) ? dbData.filter(x => x.priority === 'critical' || x.severity === 'critical').length : 0,
+        cases: Array.isArray(dbData) ? dbData : []
+      };
 
       const lines = [
-        `You currently have **${assignments.length} total assigned active complaint(s)**:`,
-        `• Assigned / Pending Start: **${open.length}**`,
-        `• In Progress: **${inProg.length}**`
+        `**YOUR CURRENT WORKLOAD**\n`,
+        `Total active assignments: **${w.totalActive}**\n`,
+        `• Pending Start: **${w.pendingStartCount}**`,
+        `• In Progress: **${w.inProgressCount}**`,
+        `• Overdue: **${w.overdueCount}**`,
+        `• Critical Severity: **${w.criticalCount}**`
       ];
 
-      assignments.slice(0, 5).forEach(c => {
-        lines.push(`• **${c.id}** — ${c.title} [${c.priority.toUpperCase()}]`);
-      });
+      if (w.cases && w.cases.length > 0) {
+        lines.push(`\n**Active Cases:**`);
+        w.cases.slice(0, 5).forEach(c => {
+          lines.push(`• **${c.id}** — ${c.title} [${(c.priority || 'medium').toUpperCase()}] (${c.status})`);
+        });
+      } else {
+        lines.push(`\n*Your personal assignment queue is currently clear.*`);
+      }
 
       return formatCopilotResponse({
         answer: lines.join('\n'),
-        summary: `${assignments.length} active assignments.`,
-        data: assignments,
-        cards: assignments.slice(0, 5),
+        summary: `${w.totalActive} active cases (${w.overdueCount} overdue).`,
+        data: w,
+        cards: (w.cases || []).slice(0, 5),
+        intent
+      });
+    }
+
+    case 'DEPARTMENT_WORKLOAD': {
+      const d = dbData || {};
+      const lines = [
+        `**DEPARTMENT WORKLOAD: ${d.departmentName || 'Your Department'}**\n`,
+        `• Total Active In-Flight: **${d.active_complaints || 0} cases**`,
+        `• Unassigned / Open Queue: **${d.open_queue || 0} cases**`,
+        `• In Progress: **${d.in_progress || 0} cases**`,
+        `• Overdue SLA Breaches: **${d.overdue || 0} cases**`,
+        `• Critical Emergency Cases: **${d.critical || 0} cases**`,
+        `• Total Resolved: **${d.resolved || 0} cases**`
+      ];
+
+      return formatCopilotResponse({
+        answer: lines.join('\n'),
+        summary: `${d.departmentName}: ${d.active_complaints || 0} active, ${d.overdue || 0} overdue`,
+        data: d,
         intent
       });
     }
@@ -271,13 +351,19 @@ function formatOfficerFallback(intent, dbData, userInput = '') {
     case 'MY_PERFORMANCE': {
       const p = dbData || {};
       const lines = [
-        `**Officer Performance Snapshot:**`,
-        `• Active Workload: **${p.assignedToMe || 0} cases** (${p.overdue || 0} overdue, ${p.dueSoon || 0} due soon)`,
-        `• Resolved This Month: **${p.resolvedThisMonth || 0} cases**`,
-        `• Total Resolved All Time: **${p.totalResolved || 0} cases**`,
+        `**YOUR OFFICER PERFORMANCE METRICS:**\n`,
         `• SLA Compliance Rate: **${p.slaComplianceRate || 100}%**`,
-        `• Reputation Points: **${p.points || 0} pts** (${p.civicLevel || 'Field Officer'})`
+        `• Resolution Rate: **${p.resolutionRate || 100}%**`,
+        `• Cases Resolved This Month: **${p.resolvedThisMonth || 0}**`,
+        `• Total Resolved All Time: **${p.totalResolved || 0}**`,
+        `• Current Active Workload: **${p.assignedToMe || 0}** (${p.overdue || 0} overdue)`,
+        `• Reopened Cases: **${p.reopenedCount || 0}**`,
+        `• Performance Points: **${p.points || 0} pts** (${p.civicLevel || 'Field Officer'})`
       ];
+
+      if (p.leaderboardRank) {
+        lines.push(`• Leaderboard Rank: **#${p.leaderboardRank}** of ${p.totalOfficersRanked || 'all'} officers`);
+      }
 
       return formatCopilotResponse({
         answer: lines.join('\n'),
@@ -288,35 +374,100 @@ function formatOfficerFallback(intent, dbData, userInput = '') {
     }
 
     case 'MY_POINTS':
-    case 'MY_RANK': {
+    case 'MY_REPUTATION': {
       const r = dbData || {};
-      const rankText = r.rank ? `Rank **#${r.rank}** out of ${r.totalOfficersRanked} officers` : 'Unranked';
+      const rankText = r.rank || r.leaderboardRank ? `Rank **#${r.rank || r.leaderboardRank}**` : 'Unranked';
       const lines = [
-        `**Officer Reputation & Leaderboard:**`,
+        `**Officer Points & Reputation:**\n`,
         `• Total Points: **${r.points || 0} pts**`,
-        `• Designation: ${r.badgeIcon || '🛡️'} *${r.level || 'Field Officer'}*`,
-        `• Leaderboard Position: ${rankText}`,
-        `\n**Officer Points Rules:**`,
+        `• Rank & Level: ${r.badgeIcon || '🛡️'} *${r.level || 'Field Officer'}* (${rankText})`,
+        `\n**Point Value Rules:**`,
         `• Start Investigation: **+5 pts**`,
-        `• Submit Evidence: **+10 pts**`,
-        `• Successful Resolution: **+25 pts**`,
-        `• Resolution within SLA Bonus: **+15 pts**`,
+        `• Evidence Upload: **+10 pts**`,
+        `• Case Resolution: **+25 pts**`,
+        `• SLA Bonus (on-time): **+15 pts**`,
         `• SLA Violation Penalty: **-15 pts**`
       ];
 
       return formatCopilotResponse({
         answer: lines.join('\n'),
-        summary: `${r.points || 0} pts, Rank: ${rankText}`,
+        summary: `${r.points || 0} pts, ${rankText}`,
         data: r,
         intent
       });
     }
 
+    case 'COMPLAINT_DETAILS':
+    case 'COMPLAINT_STATUS': {
+      const c = dbData || {};
+      if (c.error) {
+        return formatCopilotResponse({
+          answer: `⚠️ **${c.error}**`,
+          summary: c.error,
+          intent
+        });
+      }
+
+      const lines = [
+        `**CASE FILE: ${c.id}**\n`,
+        `• Title: **${c.title}**`,
+        `• Category: **${c.category}** | Severity: **${(c.severity || c.priority).toUpperCase()}**`,
+        `• Status: **${c.status.toUpperCase()}**`,
+        `• Location / Address: ${c.address || 'GPS Coordinates Registered'}`,
+        `• Assigned Officer: **${c.assigned_officer_name || (c.isAssignedToCaller ? 'Assigned to You' : 'Unassigned')}**`,
+        `• Created: ${c.created_at ? new Date(c.created_at).toLocaleString() : 'N/A'}`,
+        `• SLA Deadline: ${c.sla_due_at ? new Date(c.sla_due_at).toLocaleString() : 'N/A'} (${c.isOverdue ? '🔴 Overdue' : '🟢 Within SLA'})`
+      ];
+
+      if (c.description) {
+        lines.push(`\n**Description:**\n${c.description}`);
+      }
+
+      return formatCopilotResponse({
+        answer: lines.join('\n'),
+        summary: `${c.id}: ${c.title} (${c.status})`,
+        data: c,
+        cards: [c],
+        intent
+      });
+    }
+
+    case 'TODAY_SUMMARY': {
+      const s = dbData || {};
+      const w = s.workload || {};
+      const topCases = s.topPriorityCases || [];
+      const lines = [
+        `**TODAY'S OPERATIONAL FOCUS**\n`,
+        `You have **${w.totalActive || 0} active assignments** (${w.overdueCount || 0} overdue, ${w.criticalCount || 0} critical).\n`
+      ];
+
+      if (topCases.length > 0) {
+        lines.push(`**Recommended Action Sequence:**`);
+        topCases.forEach((c, idx) => {
+          const statusDesc = c.isOverdue
+            ? `🔴 overdue by ${c.hoursOverdue || 1}h`
+            : (c.hoursRemaining ? `⏳ SLA in ${c.hoursRemaining}h` : 'active');
+          lines.push(`${idx + 1}. **${c.id}** (${c.title}) — ${statusDesc}`);
+        });
+      } else {
+        lines.push(`*Your immediate queue has no pending items. Check department unassigned queue if you have capacity.*`);
+      }
+
+      return formatCopilotResponse({
+        answer: lines.join('\n'),
+        summary: `Today: ${w.totalActive || 0} active cases.`,
+        data: s,
+        cards: topCases.slice(0, 3),
+        intent
+      });
+    }
+
+    case 'UNKNOWN':
     default: {
       return formatCopilotResponse({
-        answer: 'Officer Copilot ready. You can ask for your highest priority complaints, SLA breach risks, active assignments, or performance summary.',
-        summary: 'Officer Copilot operational.',
-        intent: 'GENERAL_OFFICER_QUERY'
+        answer: `I can check that for you. Did you mean:\n• **Priority Complaints** in your assigned queue?\n• **SLA Alerts** and overdue deadlines?\n• **Department Workload** overview?\n• **Your Performance** and SLA compliance rate?\n\nFeel free to type your exact question or click one of the quick actions above!`,
+        summary: 'Clarification required.',
+        intent: 'UNKNOWN'
       });
     }
   }
@@ -352,7 +503,7 @@ function formatAdminFallback(intent, dbData, userInput = '') {
       const depts = d.departments || [];
       const sortedByOverdue = [...depts].sort((a, b) => (b.overdue || 0) - (a.overdue || 0));
       const top = sortedByOverdue[0] || d.topWorkloadDepartment;
-      const lines = top 
+      const lines = top
         ? [`**${top.name}** has the highest overdue workload with **${top.overdue}** overdue cases out of ${top.totalAssigned} total assigned (${top.slaCompliance}% SLA compliance).`]
         : ['All municipal departments are currently operating within SLA deadlines.'];
       return formatCopilotResponse({
@@ -390,216 +541,149 @@ function formatAdminFallback(intent, dbData, userInput = '') {
         });
       }
 
-      let lines = [`There are **${count}** urgent/critical complaint(s) reported in the last 24 hours:`];
-      list.slice(0, 5).forEach(item => {
-        lines.push(`• **${item.id}** — ${item.title} (${item.category}) — *${item.priority.toUpperCase()}* at ${item.address || 'Field Location'}`);
+      const lines = [
+        `**Municipal Emergency Action Summary:**`,
+        `There are **${count} critical/urgent complaint(s)** registered in the last 24 hours requiring immediate supervision:\n`
+      ];
+
+      list.slice(0, 5).forEach((item, idx) => {
+        lines.push(`${idx + 1}. **${item.id}** — *${item.title}*`);
+        lines.push(`   • Category: **${item.category}** | Department: **${item.department_name || 'General'}**`);
+        lines.push(`   • Officer: **${item.assigned_officer_name || 'Unassigned'}**`);
       });
 
       return formatCopilotResponse({
         answer: lines.join('\n'),
-        summary: `${count} critical complaints today.`,
-        data: list,
+        summary: `${count} critical complaints registered today.`,
+        data: c,
         cards: list.slice(0, 5),
         intent,
-        recommendations: ['Ensure rapid response dispatch to highest scoring emergency items']
+        recommendations: [
+          'Verify officer assignment on unassigned critical complaints.',
+          'Review field escalation protocols for pending cases.'
+        ]
       });
     }
 
     case 'DEPARTMENT_SUMMARY': {
       const d = dbData || {};
-      const depts = d.departments || [];
-      const top = d.topWorkloadDepartment;
-      if (depts.length === 0) {
-        return formatCopilotResponse({
-          answer: 'All municipal departments are currently balanced with no active workload recorded.',
-          summary: '0 department workloads.',
-          intent
-        });
-      }
+      const list = d.departments || [];
+      const lines = [
+        `**Department Workload & SLA Compliance Snapshot:**\n`
+      ];
 
-      let lines = [`**Municipal Department Workload Summary:**`];
-      if (top) {
-        lines.push(`• Top Workload: **${top.name}** with **${top.totalAssigned}** active cases (${top.overdue} overdue, ${top.slaCompliance}% SLA compliance)`);
-      }
-      lines.push(`\n**All Departments:**`);
-      depts.slice(0, 5).forEach(dept => {
-        lines.push(`• **${dept.name}**: ${dept.totalAssigned} active | ${dept.overdue} overdue | ${dept.slaCompliance}% SLA`);
+      list.forEach(dept => {
+        lines.push(`• **${dept.name}**: ${dept.totalAssigned} active | **${dept.overdue} overdue** | ${dept.slaCompliance}% SLA Compliance`);
       });
+
+      if (d.topWorkloadDepartment) {
+        lines.push(`\n**Leadership Note:** Department of *${d.topWorkloadDepartment.name}* carries the highest current load.`);
+      }
 
       return formatCopilotResponse({
         answer: lines.join('\n'),
-        summary: `Highest workload: ${top?.name || 'N/A'}`,
-        data: depts,
+        summary: `Department analytics for ${list.length} departments.`,
+        data: d,
         intent
       });
     }
 
     case 'SLA_BREACHES': {
-      const s = dbData || {};
-      const breaches = s.breaches || [];
-      const total = s.totalBreaches || breaches.length;
-
-      if (total === 0) {
+      const b = dbData || {};
+      const list = b.breaches || [];
+      if (list.length === 0) {
         return formatCopilotResponse({
-          answer: 'All active complaints across the city are currently operating within SLA deadlines. Zero SLA breaches.',
-          summary: '0 SLA breaches.',
+          answer: 'Outstanding news! There are **0 active SLA breaches** across the entire municipality. All departments are performing within designated service timelines.',
+          summary: '0 SLA breaches city-wide.',
+          data: b,
           intent
         });
       }
 
-      let lines = [`There are currently **${total}** complaint(s) that have breached their SLA resolution window:`];
-      breaches.slice(0, 5).forEach(b => {
-        lines.push(`• **${b.id}** — ${b.title} (${b.category}) — Overdue by **${b.hoursOverdue || 1} hour(s)** [Dept: ${b.department_name || 'General'}]`);
+      const lines = [
+        `**City-Wide SLA Breach Report:**`,
+        `There are currently **${b.totalBreaches || list.length} overdue complaint(s)** across municipal departments:\n`
+      ];
+
+      list.slice(0, 5).forEach((item, idx) => {
+        lines.push(`${idx + 1}. **${item.id}** — *${item.title}*`);
+        lines.push(`   • Department: **${item.department_name || 'Unassigned'}** | Overdue by: **${item.hoursOverdue || item.hours_overdue || 1} hour(s)**`);
+        lines.push(`   • Officer: **${item.assigned_officer_name || 'Unassigned'}**`);
       });
 
       return formatCopilotResponse({
         answer: lines.join('\n'),
-        summary: `${total} SLA breaches found.`,
-        data: breaches,
-        cards: breaches.slice(0, 5),
+        summary: `${b.totalBreaches || list.length} SLA breaches active.`,
+        data: b,
+        cards: list.slice(0, 5),
         intent,
-        recommendations: ['Issue escalation alerts to responsible department supervisors']
+        recommendations: [
+          'Trigger administrative re-assignment on overdue tickets > 48h.',
+          'Instruct department heads to prioritize overdue queues.'
+        ]
       });
     }
 
     case 'WARD_UNRESOLVED': {
       const w = dbData || {};
-      const breakdown = w.wardBreakdown || [];
-      const top = w.topUnresolvedWard;
+      const list = w.wardBreakdown || [];
+      const lines = [
+        `**Ward-Level Complaint Scorecard (Top Unresolved):**\n`
+      ];
 
-      if (breakdown.length === 0) {
-        return formatCopilotResponse({
-          answer: 'All municipal wards currently have zero unresolved complaints.',
-          summary: '0 ward backlogs.',
-          intent
-        });
-      }
-
-      let lines = [`**Ward Unresolved Complaint Analysis:**`];
-      if (top) {
-        lines.push(`• Highest Backlog: **${top.name}** (Ward #${top.wardNumber}) with **${(top.open || 0) + (top.inProgress || 0)}** unresolved cases (${top.slaCompliance}% SLA compliance).`);
-      }
-      lines.push(`\n**Top Wards by Unresolved Issues:**`);
-      breakdown.slice(0, 5).forEach(item => {
-        lines.push(`• **${item.wardName}** (#${item.wardNumber}): ${item.unresolved} unresolved / ${item.total} total (${item.slaCompliance} compliance)`);
+      list.slice(0, 5).forEach(ward => {
+        lines.push(`• **${ward.wardName}** (Ward #${ward.wardNumber}): **${ward.unresolved} unresolved** (${ward.open} open, ${ward.inProgress} in progress) | SLA: ${ward.slaCompliance}`);
       });
 
       return formatCopilotResponse({
         answer: lines.join('\n'),
-        summary: `Top unresolved ward: ${top?.name || 'N/A'}`,
-        data: breakdown,
+        summary: `Ward scorecard loaded for ${list.length} wards.`,
+        data: w,
         intent
       });
     }
 
     case 'OFFICER_PERFORMANCE': {
-      const o = dbData || {};
-      const busy = o.highestWorkloadOfficers || [];
-      const compliant = o.bestComplianceOfficers || [];
-      const attention = o.needsAttentionOfficers || [];
+      const p = dbData || {};
+      const high = p.highestWorkloadOfficers || [];
+      const lines = [
+        `**Officer Workload & Compliance Overview:**\n`
+      ];
 
-      let lines = [`**Officer Operational Analytics:**`];
-      if (compliant.length > 0) {
-        lines.push(`• **Top SLA Compliant Officers:** ${compliant.map(x => `${x.name} (${x.slaCompliance}%)`).join(', ')}`);
-      }
-      if (busy.length > 0) {
-        lines.push(`• **Highest Workload Officers:** ${busy.map(x => `${x.name} (${x.activeAssignments} cases)`).join(', ')}`);
-      }
-      if (attention.length > 0) {
-        lines.push(`• **Officers Needing Attention (Overdue Cases):** ${attention.map(x => `${x.name} (${x.overdueAssignments} overdue)`).join(', ')}`);
+      if (high.length > 0) {
+        lines.push(`**Highest Active Workload:**`);
+        high.slice(0, 4).forEach(o => {
+          lines.push(`• **${o.name}** (${o.departmentName || 'Field'}): ${o.activeAssignments} active (${o.overdueAssignments} overdue)`);
+        });
       }
 
       return formatCopilotResponse({
         answer: lines.join('\n'),
-        summary: `Officer analytics evaluated.`,
-        data: o,
+        summary: 'Officer performance analytics loaded.',
+        data: p,
         intent
       });
     }
 
-    case 'CIVIC_HEALTH': {
+    case 'CIVIC_HEALTH':
+    default: {
       const h = dbData || {};
       const lines = [
-        `**Municipal Civic Health Snapshot:**`,
-        `• Total Registered Complaints: **${h.totalComplaints || 0}**`,
-        `• Active Cases: **${(h.openComplaints || 0) + (h.inProgressComplaints || 0)}** (Open: ${h.openComplaints || 0}, In Progress: ${h.inProgressComplaints || 0})`,
-        `• Resolved Complaints: **${h.resolvedComplaints || 0}** (${h.resolutionRate || 0}% resolution rate)`,
-        `• Overdue SLA Cases: **${h.overdueComplaints || 0}**`,
-        `• Critical Complaints (Last 24h): **${h.criticalToday || 0}**`,
-        `• City-wide SLA Compliance: **${h.slaCompliance || 0}%**`
+        `**City-Wide Civic Health Overview:**`,
+        `• Total Municipal Complaints: **${h.totalComplaints || 0}**`,
+        `• Active Cases: **${(h.openComplaints || 0) + (h.inProgressComplaints || 0)}** (${h.openComplaints || 0} open, ${h.inProgressComplaints || 0} in progress)`,
+        `• Successfully Resolved: **${h.resolvedComplaints || 0}**`,
+        `• Resolution Rate: **${h.resolutionRate || 0}%**`,
+        `• SLA Compliance: **${h.slaCompliance || 0}%**`,
+        `• Overdue Breaches: **${h.overdueComplaints || 0}**`,
+        `• Critical Emergency Cases Today: **${h.criticalToday || 0}**`
       ];
 
       return formatCopilotResponse({
         answer: lines.join('\n'),
-        summary: `Civic Health: ${h.resolutionRate}% resolution, ${h.slaCompliance}% SLA.`,
+        summary: `Resolution Rate: ${h.resolutionRate || 0}%, SLA: ${h.slaCompliance || 0}%`,
         data: h,
-        intent
-      });
-    }
-
-    case 'GIS_HOTSPOTS': {
-      const h = dbData || {};
-      const spots = h.hotspots || [];
-      const top = h.topHotspot;
-
-      if (spots.length === 0) {
-        return formatCopilotResponse({
-          answer: 'No acute complaint hotspots or dense clusters are currently detected across the city.',
-          summary: '0 hotspots detected.',
-          intent
-        });
-      }
-
-      let lines = [`**Geospatial Complaint Hotspots (Last 30 Days):**`];
-      if (top) {
-        lines.push(`• **Primary Hotspot:** ${top.zone} (${top.category}) with **${top.totalReports}** reports (${top.unresolvedCount} unresolved).`);
-      }
-      spots.slice(0, 4).forEach(s => {
-        lines.push(`• **${s.zone}** — ${s.category}: ${s.totalReports} reports (${s.unresolvedCount} unresolved, Status: ${s.status})`);
-      });
-
-      return formatCopilotResponse({
-        answer: lines.join('\n'),
-        summary: `Top hotspot: ${top?.zone || 'N/A'}`,
-        data: spots,
-        intent
-      });
-    }
-
-    case 'COMPLAINT_TRENDS': {
-      const t = dbData || {};
-      const trends = t.trends || [];
-      const top = t.topRising;
-
-      if (trends.length === 0) {
-        return formatCopilotResponse({
-          answer: 'Complaint volume across all categories is currently stable.',
-          summary: 'Stable complaint trends.',
-          intent
-        });
-      }
-
-      let lines = [`**Predictive Category Trends (30-Day Window):**`];
-      if (top) {
-        lines.push(`• **Fastest Increasing Category:** ${top.category} (+${top.changePercentage}% change)`);
-      }
-      trends.slice(0, 5).forEach(tr => {
-        lines.push(`• **${tr.category}**: ${tr.currentCount} cases (${tr.changePercentage > 0 ? '+' : ''}${tr.changePercentage}% vs previous period)`);
-      });
-
-      return formatCopilotResponse({
-        answer: lines.join('\n'),
-        summary: `Top rising: ${top?.category || 'N/A'}`,
-        data: trends,
-        intent
-      });
-    }
-
-    default: {
-      return formatCopilotResponse({
-        answer: 'Governance Copilot operational. You can query critical emergencies, department workloads, ward scorecards, SLA breaches, or officer performance.',
-        summary: 'Governance Copilot ready.',
-        intent: 'GENERAL_ADMIN_QUERY'
+        intent: 'CIVIC_HEALTH'
       });
     }
   }
