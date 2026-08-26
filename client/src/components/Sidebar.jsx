@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   LayoutDashboard, Ticket, PlusCircle, Bell, Map, LogOut, ChevronsLeft, ChevronsRight,
-  X, ShieldAlert, Cpu, User, Bookmark, Navigation2, Settings, Compass, Sparkles, MessageSquare
+  X, ShieldAlert, Cpu, User, Bookmark, Navigation2, Settings, Compass, Sparkles, MessageSquare, Award, Trophy
 } from 'lucide-react'
 import CivicGreenNetLogo from './brand/CivicGreenNetLogo'
 import AuthContext from '../context/AuthContext'
@@ -31,6 +31,7 @@ function getNavSectionsForRole(role) {
         items: [
           { to: '/officer', label: 'Operations Center', icon: LayoutDashboard },
           { to: '/officer/assignments', label: 'My Assignments', icon: Ticket },
+          { to: '/officer/performance', label: 'Performance & Score', icon: Award },
           { to: '/complaints', label: 'All Complaints', icon: Ticket },
           { to: '/officer/nearby', label: 'Nearby Issues', icon: Map },
           { to: '/officer/map', label: 'Map Operations', icon: Navigation2 },
@@ -63,6 +64,7 @@ function getNavSectionsForRole(role) {
     {
       title: 'My Civic Activity',
       items: [
+        { to: '/impact', label: 'Civic Impact', icon: Award },
         { to: '/complaints?view=mine', label: 'My Complaints', icon: Ticket },
         { to: '/complaints/new', label: 'Report an Issue', icon: PlusCircle, highlight: true },
         { to: '/complaints?view=followed', label: 'Followed Issues', icon: Bookmark }

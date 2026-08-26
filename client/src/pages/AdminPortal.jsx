@@ -6,7 +6,7 @@ import {
   RefreshCw, Eye, UserCheck, AlertCircle, BarChart2, ShieldAlert, Activity,
   Server, Database, AlertOctagon, Sparkles, MapPin, CheckCircle, Mail,
   Bell, CheckCheck, UserX, Layers, ArrowLeft, Shield, Image as ImageIcon,
-  Calendar, User, LogIn, LogOut
+  Calendar, User, LogIn, LogOut, Award
 } from 'lucide-react'
 import Chart from 'chart.js/auto'
 import ThemeContext from '../context/ThemeContext'
@@ -23,6 +23,7 @@ import SystemHealthView from '../components/admin/SystemHealthView'
 import EmailCenterView from '../components/admin/EmailCenterView'
 import AuditLogsView from '../components/admin/AuditLogsView'
 import RoleChangeModal from '../components/admin/RoleChangeModal'
+import ReputationManagementView from '../components/admin/ReputationManagementView'
 import UserDirectoryView from '../components/admin/UserDirectoryView'
 import CivicIntelligenceView from '../components/admin/CivicIntelligenceView'
 import GovernanceOverview from '../components/governance/GovernanceOverview'
@@ -65,6 +66,7 @@ const TABS = [
   { key: 'wards', label: 'Wards & Zones', icon: Layers },
   { key: 'departments', label: 'Departments', icon: Building2 },
   { key: 'officer-approvals', label: 'Officer Management', icon: UserCheck },
+  { key: 'reputation', label: 'Reputation & Scores', icon: Award },
   { key: 'users', label: 'User Directory', icon: Users },
   { key: 'reports', label: 'Analytics & Reports', icon: BarChart2 },
   { key: 'data-quality', label: 'Data Quality & Alerts', icon: ShieldAlert },
@@ -2803,25 +2805,25 @@ export default function AdminPortal() {
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
               <div>
                 <label htmlFor="admin-map-status" className="mb-1 block text-xs font-bold text-slate-600 dark:text-slate-400">Status</label>
-                <select id="admin-map-status" value={mapFilters.status || ''} onChange={(e) => setMapFilters((p) => ({ ...p, status: e.target.value || null }))} className={SELECT_CLS}>
+                <select id="admin-map-status" value={mapFilters.status || ''} onChange={(e) => setMapFilters((p) => ({ ...p, status: e.target.value || undefined }))} className={SELECT_CLS}>
                   {STATUS_OPTIONS.map((o) => <option key={o.value || 'all'} value={o.value}>{o.label}</option>)}
                 </select>
               </div>
               <div>
                 <label htmlFor="admin-map-cat" className="mb-1 block text-xs font-bold text-slate-600 dark:text-slate-400">Category</label>
-                <select id="admin-map-cat" value={mapFilters.category || ''} onChange={(e) => setMapFilters((p) => ({ ...p, category: e.target.value || null }))} className={SELECT_CLS}>
+                <select id="admin-map-cat" value={mapFilters.category || ''} onChange={(e) => setMapFilters((p) => ({ ...p, category: e.target.value || undefined }))} className={SELECT_CLS}>
                   {CATEGORY_OPTIONS.map((o) => <option key={o.value || 'all'} value={o.value}>{o.label}</option>)}
                 </select>
               </div>
               <div>
                 <label htmlFor="admin-map-prio" className="mb-1 block text-xs font-bold text-slate-600 dark:text-slate-400">Priority</label>
-                <select id="admin-map-prio" value={mapFilters.priority || ''} onChange={(e) => setMapFilters((p) => ({ ...p, priority: e.target.value || null }))} className={SELECT_CLS}>
+                <select id="admin-map-prio" value={mapFilters.priority || ''} onChange={(e) => setMapFilters((p) => ({ ...p, priority: e.target.value || undefined }))} className={SELECT_CLS}>
                   {PRIORITY_OPTIONS.map((o) => <option key={o.value || 'all'} value={o.value}>{o.label}</option>)}
                 </select>
               </div>
               <div>
                 <label htmlFor="admin-map-sla" className="mb-1 block text-xs font-bold text-slate-600 dark:text-slate-400">SLA Risk</label>
-                <select id="admin-map-sla" value={mapFilters.slaRisk || ''} onChange={(e) => setMapFilters((p) => ({ ...p, slaRisk: e.target.value || null }))} className={SELECT_CLS}>
+                <select id="admin-map-sla" value={mapFilters.slaRisk || ''} onChange={(e) => setMapFilters((p) => ({ ...p, slaRisk: e.target.value || undefined }))} className={SELECT_CLS}>
                   <option value="">All SLA Tiers</option>
                   <option value="overdue">🔴 Overdue</option>
                   <option value="due_soon">🟡 Due Soon (&lt;24h)</option>
@@ -2830,7 +2832,7 @@ export default function AdminPortal() {
               </div>
               <div>
                 <label htmlFor="admin-map-time" className="mb-1 block text-xs font-bold text-slate-600 dark:text-slate-400">Time Range</label>
-                <select id="admin-map-time" value={mapFilters.timeframe || ''} onChange={(e) => setMapFilters((p) => ({ ...p, timeframe: e.target.value || null }))} className={SELECT_CLS}>
+                <select id="admin-map-time" value={mapFilters.timeframe || ''} onChange={(e) => setMapFilters((p) => ({ ...p, timeframe: e.target.value || undefined }))} className={SELECT_CLS}>
                   {TIME_OPTIONS.map((o) => <option key={o.value || 'all'} value={o.value}>{o.label}</option>)}
                 </select>
               </div>
@@ -2863,6 +2865,11 @@ export default function AdminPortal() {
       {/* ── Data Quality & Governance Alerts ──────────────────────────────────── */}
       {tab === 'data-quality' && (
         <DataQualityAlertsView />
+      )}
+
+      {/* ── Civic Reputation & Performance ──────────────────────────────────── */}
+      {tab === 'reputation' && (
+        <ReputationManagementView />
       )}
 
       {/* ── Users ───────────────────────────────────────────────────────────── */}

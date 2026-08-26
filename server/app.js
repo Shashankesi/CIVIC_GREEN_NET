@@ -18,6 +18,7 @@ const mapRoutes = require('./routes/mapRoutes');
 const governanceRoutes = require('./routes/governanceRoutes');
 const publicRoutes = require('./routes/publicRoutes');
 const realtimeRoutes = require('./routes/realtimeRoutes');
+const reputationRoutes = require('./routes/reputationRoutes');
 const errorHandler = require('./middleware/errorHandler');
 
 const app = express();
@@ -234,6 +235,7 @@ app.use('/api/ai', aiRoutes);
 app.use('/api/maps', mapRoutes);
 app.use('/api/governance', governanceRoutes);
 app.use('/api/realtime', realtimeRoutes);
+app.use('/api/reputation', reputationRoutes);
 
 // ─── 8. Error Handler ───────────────────────────────────────────────────────
 app.use(errorHandler);

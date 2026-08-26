@@ -334,6 +334,18 @@ async function acceptComplaint(req, res) {
       ]);
     } catch (e) {}
 
+    // Award Officer Points for acceptance
+    try {
+      const pointService = require('../services/pointService');
+      await pointService.awardPoints({
+        userId: officerId,
+        role: 'officer',
+        complaintId,
+        eventType: 'OFFICER_ACCEPTED',
+        reason: 'Accepted case assignment'
+      });
+    } catch (e) {}
+
     return success(res, updated, 'Complaint assignment accepted');
   } catch (err) {
     return handleError(res, err);
@@ -421,6 +433,19 @@ async function addNote(req, res) {
     const q = `INSERT INTO complaint_notes(complaint_id, user_id, note, is_internal, created_at)
       VALUES($1, $2, $3, $4, now()) RETURNING *`;
     const r = await db.query(q, [complaintId, officerId, note.trim(), isInternal === undefined ? true : isInternal === true || isInternal === 'true']);
+
+    // Award evidence / work documentation points to officer
+    try {
+      const pointService = require('../services/pointService');
+      await pointService.awardPoints({
+        userId: officerId,
+        role: 'officer',
+        complaintId,
+        eventType: 'OFFICER_EVIDENCE_SUBMITTED',
+        reason: 'Operational notes & investigation evidence logged'
+      });
+    } catch (ptErr) {}
+
     return success(res, r.rows[0], 'Note added');
   } catch (err) {
     return handleError(res, err);

@@ -291,9 +291,28 @@ const verifyResolution = asyncHandler(async (req, res) => {
   if (satisfied) {
     // 1. Confirm Resolution -> Status closed
     const updated = await timelineService.changeStatus(id, 'closed', getUserId(req), note || 'Citizen confirmed and verified resolution.');
-    // Award citizen contribution points (+5)
+    // Award citizen & officer verification points
     try {
+      const contributionService = require('../services/citizenContributionService');
       await contributionService.recordContributionEvent(complaint.user_id, 'RESOLUTION_VERIFIED', 'complaint', id);
+
+      const pointService = require('../services/pointService');
+      await pointService.awardPoints({
+        userId: complaint.user_id,
+        role: 'citizen',
+        complaintId: id,
+        eventType: 'COMPLAINT_VERIFIED',
+        reason: 'Citizen verified and confirmed resolution outcome'
+      });
+      if (complaint.officer_id) {
+        await pointService.awardPoints({
+          userId: complaint.officer_id,
+          role: 'officer',
+          complaintId: id,
+          eventType: 'OFFICER_VERIFIED_RESOLUTION',
+          reason: 'Citizen verified resolution quality'
+        });
+      }
     } catch(e) {}
     return success(res, updated, 'Resolution verified: complaint is now closed');
   } else {

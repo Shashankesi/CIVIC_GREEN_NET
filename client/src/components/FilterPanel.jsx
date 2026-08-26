@@ -7,7 +7,7 @@ const priorities = ['low', 'medium', 'high', 'critical']
 
 export default function FilterPanel({ filters, setFilters }) {
   function update(key, value) {
-    setFilters((prev) => ({ ...prev, [key]: value || null }))
+    setFilters((prev) => ({ ...prev, [key]: value || undefined }))
   }
 
   function reset() {

@@ -27,6 +27,7 @@ export default function AIChatPanel({
   const [expanded, setExpanded] = useState(fullPage);
 
   const messagesEndRef = useRef(null);
+  const lastSentTextRef = useRef('');
 
   useEffect(() => {
     if (isOpen) {
@@ -68,6 +69,7 @@ export default function AIChatPanel({
     const text = (textToSend || inputMessage).trim();
     if (!text || loading) return;
 
+    lastSentTextRef.current = text;
     setInputMessage('');
     setErrorMessage(null);
 
@@ -303,7 +305,7 @@ export default function AIChatPanel({
                   <span>{errorMessage}</span>
                 </div>
                 <button
-                  onClick={() => handleSendMessage()}
+                  onClick={() => handleSendMessage(lastSentTextRef.current)}
                   className="px-2 py-1 bg-red-900 hover:bg-red-800 rounded text-[10px] font-semibold text-white transition flex items-center gap-1"
                 >
                   <RefreshCw className="w-3 h-3" />

@@ -64,6 +64,17 @@ export function RealtimeProvider({ children }) {
       toast.error(`⚠️ SLA Breached: ${event.ticketId || 'Ticket'}`, { duration: 6000 })
     } else if (event.type === 'COMPLAINT_RESOLVED') {
       toast.success(`Complaint ${event.ticketId || ''} marked Resolved!`, { icon: '✅' })
+    } else if (event.type === 'POINTS_AWARDED') {
+      toast.success(`+${event.points} Civic Points! ${event.reason || ''}`, {
+        icon: '⭐',
+        duration: 4500,
+        style: { borderRadius: '10px', background: '#064e3b', color: '#ecfdf5', fontSize: '13px' }
+      })
+    } else if (event.type === 'POINTS_DEDUCTED') {
+      toast.error(`${event.points} Civic Points: ${event.reason || 'Point adjustment'}`, {
+        icon: '⚠️',
+        duration: 5000
+      })
     }
 
     // Call specific event listeners

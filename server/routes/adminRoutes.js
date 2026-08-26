@@ -58,6 +58,15 @@ router.post('/email/test-otp', adminCtl.testOtpEmail);
 // Reports
 router.get('/reports/summary', adminCtl.reportSummary);
 router.get('/reports/complaints', adminCtl.reportComplaints);
+
+// Reputation & Performance Governance
+const repCtl = require('../controllers/reputationController');
+router.get('/reputation/overview', repCtl.getAdminOverview);
+router.get('/reputation/citizens', repCtl.getAdminCitizens);
+router.get('/reputation/officers', repCtl.getAdminOfficers);
+router.get('/reputation/rules', repCtl.getRules);
+router.put('/reputation/rules', repCtl.updateAdminRules);
+
 router.get('/reports/export', adminCtl.exportReport);
 
 module.exports = router;

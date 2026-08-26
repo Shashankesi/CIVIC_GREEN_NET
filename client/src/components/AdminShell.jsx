@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import {
   LayoutDashboard, FileText, Users, Building2, Map, BarChart2,
   ShieldCheck, Bell, LogOut, ShieldAlert, Mail, Activity,
-  ChevronsLeft, ChevronsRight, X, UserCheck, Sparkles, Clock, Layers
+  ChevronsLeft, ChevronsRight, X, UserCheck, Sparkles, Clock, Layers, Award
 } from 'lucide-react'
 import CivicGreenNetLogo from './brand/CivicGreenNetLogo'
 import AuthContext from '../context/AuthContext'
@@ -41,6 +41,7 @@ const NAV_GROUPS = [
     items: [
       { tabKey: 'departments', label: 'Departments', icon: Building2 },
       { tabKey: 'officer-approvals', label: 'Officers', icon: UserCheck, badgeKey: 'pendingApprovals' },
+      { tabKey: 'reputation', label: 'Reputation & Scores', icon: Award },
       { tabKey: 'users', label: 'User Directory', icon: Users },
       { tabKey: 'reports', label: 'Performance & Reports', icon: BarChart2 },
       { tabKey: 'data-quality', label: 'Data Quality & Alerts', icon: ShieldCheck }

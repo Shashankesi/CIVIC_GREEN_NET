@@ -26,25 +26,44 @@ const CIVIC_LEVELS = [
 async function recordContributionEvent(userId, eventType, referenceType = null, referenceId = null, metadata = {}) {
   if (!userId || !eventType) return null;
   const points = POINTS_MATRIX[eventType] || 0;
-  if (points <= 0) return null;
+
+  // 1. Insert into citizen_contribution_events for legacy compatibility
+  let legacyRes = null;
+  try {
+    if (db._pool && points > 0) {
+      const insertRes = await db.query(`
+        INSERT INTO citizen_contribution_events (user_id, event_type, points, reference_type, reference_id, metadata, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, now())
+        ON CONFLICT (user_id, event_type, reference_type, reference_id) DO NOTHING
+        RETURNING id, points, created_at
+      `, [userId, eventType, points, referenceType, referenceId, JSON.stringify(metadata)]);
+      legacyRes = insertRes.rows[0] || null;
+    }
+  } catch (err) {
+    logger.warn('Failed to insert citizen_contribution_events', { err: err.message, userId, eventType });
+  }
+
+  // 2. Also record in point_transactions via pointService
+  const pointService = require('./pointService');
+  let standardEvent = eventType;
+  if (eventType === 'REPORT_SUBMITTED') standardEvent = 'COMPLAINT_SUBMITTED';
+  else if (eventType === 'RESOLUTION_VERIFIED') standardEvent = 'COMPLAINT_VERIFIED';
+  else if (eventType === 'EVIDENCE_UPLOADED') standardEvent = 'HELPFUL_EVIDENCE';
+
+  const complaintId = referenceType === 'complaint' ? referenceId : null;
 
   try {
-    const insertRes = await db.query(`
-      INSERT INTO citizen_contribution_events (user_id, event_type, points, reference_type, reference_id, metadata, created_at)
-      VALUES ($1, $2, $3, $4, $5, $6, now())
-      ON CONFLICT (user_id, event_type, reference_type, reference_id) DO NOTHING
-      RETURNING id, points, created_at
-    `, [userId, eventType, points, referenceType, referenceId, JSON.stringify(metadata)]);
-
-    if (insertRes.rows.length > 0) {
-      logger.info('Citizen contribution event recorded', { userId, eventType, points });
-      // Asynchronously check badge eligibility
-      await checkAndAwardBadges(userId);
-    }
-    return insertRes.rows[0] || null;
+    const tx = await pointService.awardPoints({
+      userId,
+      role: 'citizen',
+      complaintId,
+      eventType: standardEvent,
+      pointsOverride: points,
+      metadata: { ...metadata, legacyEventType: eventType }
+    });
+    return legacyRes || tx;
   } catch (err) {
-    logger.warn('Failed to record contribution event', { err: err.message, userId, eventType });
-    return null;
+    return legacyRes;
   }
 }
 

@@ -24,7 +24,7 @@ export default function MapPage() {
   const geoAbortRef = useRef(null)
 
   function update(key, value) {
-    setFilters(prev => ({ ...prev, [key]: value || null }))
+    setFilters(prev => ({ ...prev, [key]: value || undefined }))
   }
   function resetFilters() { setFilters({}) }
 

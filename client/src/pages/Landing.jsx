@@ -1251,7 +1251,7 @@ export default function Landing() {
 
           <div className="mt-12 border-t border-slate-200/80 pt-6 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-400 dark:border-slate-800">
             <p>© {new Date().getFullYear()} Civic GreenNet. Built for smarter, more responsive communities.</p>
-            <p className="mt-2 sm:mt-0 font-medium">All data backed by Neon PostgreSQL.</p>
+            <p className="mt-2 sm:mt-0 font-medium">Civic GreenNet — Turning citizen reports into measurable civic action.</p>
           </div>
         </div>
       </footer>

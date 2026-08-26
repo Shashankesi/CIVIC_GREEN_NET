@@ -160,12 +160,15 @@ function detectIntent(question) {
 }
 
 const COPILOT_EXPLAIN_PROMPT = `You are the Civic GreenNet Admin Operations Copilot.
-Explain the authoritative database query result clearly and concisely for municipal leadership.
+Analyze the database query result and return a JSON object with a single key "explanation".
 
 CRITICAL INSTRUCTIONS:
-- You MUST report ONLY the exact counts and statistics present in the VERIFIED_DATABASE_DATA.
+- Return ONLY a valid JSON object in this exact format: { "explanation": "your briefing text here" }
+- Do NOT wrap in markdown code fences. Return raw JSON only.
+- Report ONLY the exact counts and statistics present in VERIFIED_DATABASE_DATA.
 - NEVER invent, inflate, or contradict the numbers in the database result.
-- Present a crisp 2 to 4 sentence executive briefing with bullet points where appropriate.`;
+- Use markdown bold (**text**) for key numbers in the explanation value.
+- The explanation should be a crisp 2-4 sentence executive briefing.`;
 
 /**
  * Process Admin Copilot Question with Guaranteed Numerical Consistency
@@ -198,6 +201,11 @@ ${JSON.stringify(dbResult, null, 2)}`;
 
     explanation = aiRes.data?.explanation || aiRes.data?.summary || aiRes.rawText;
   } catch (err) {
+    logger.warn('[Admin Copilot AI Error] Structured AI generation failed, falling back to deterministic explanation', {
+      error: err.message,
+      intent,
+      question
+    });
     // Deterministic fallback response with 100% database accuracy
     if (intent === 'UNRESOLVED_BY_CATEGORY') {
       const cat = params.category ? `${params.category} ` : '';

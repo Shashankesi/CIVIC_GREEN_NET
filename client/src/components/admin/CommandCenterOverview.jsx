@@ -20,6 +20,11 @@ export default function CommandCenterOverview({
   const [timeRange, setTimeRange] = useState('30D')
   const [currentTime, setCurrentTime] = useState(new Date())
   const [mapFilter, setMapFilter] = useState('all')
+  const mapViewFilters = useMemo(() => {
+    if (mapFilter === 'all') return {}
+    if (mapFilter === 'critical') return { priority: 'critical' }
+    return { status: mapFilter }
+  }, [mapFilter])
 
   // Dynamic live clock ticker
   useEffect(() => {
@@ -944,7 +949,7 @@ export default function CommandCenterOverview({
 
           <div className="h-80 w-full overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800">
             <MapView
-              complaints={mapComplaints}
+              filters={mapViewFilters}
               height="100%"
             />
           </div>

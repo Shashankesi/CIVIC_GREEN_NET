@@ -29,6 +29,8 @@ const PendingApproval = lazy(() => import('./pages/PendingApproval'))
 const Profile = lazy(() => import('./pages/Profile'))
 const Settings = lazy(() => import('./pages/Settings'))
 const NotFound = lazy(() => import('./pages/NotFound'))
+const CivicImpact = lazy(() => import('./pages/CivicImpact'))
+const OfficerPerformance = lazy(() => import('./pages/OfficerPerformance'))
 
 function withLoader(node) {
   return <Suspense fallback={<RouteLoader />}>{node}</Suspense>
@@ -76,12 +78,15 @@ export default function App() {
           <Route path="/complaints/:id" element={withLoader(<ComplaintView />)} />
           <Route path="/notifications" element={withLoader(<Notifications />)} />
           <Route path="/map" element={withLoader(<MapPage />)} />
+          <Route path="/impact" element={withLoader(<CivicImpact />)} />
+          <Route path="/civic-impact" element={withLoader(<CivicImpact />)} />
           <Route path="/profile" element={withLoader(<Profile />)} />
           <Route path="/settings" element={withLoader(<Settings />)} />
           <Route path="/pending-approval" element={withLoader(<ProtectedRoute roles={['officer']} isPendingApprovalRoute={true} redirectTo={homeRoute}><PendingApproval /></ProtectedRoute>)} />
           <Route path="/officer/onboarding" element={withLoader(<ProtectedRoute roles={['officer', 'admin']} isOnboardingRoute={true}><OfficerOnboarding /></ProtectedRoute>)} />
           <Route path="/officer" element={withLoader(<ProtectedRoute roles={['officer', 'admin']} redirectTo={homeRoute}><OfficerPortal /></ProtectedRoute>)} />
           <Route path="/officer/assignments" element={withLoader(<ProtectedRoute roles={['officer', 'admin']} redirectTo={homeRoute}><OfficerAssignments /></ProtectedRoute>)} />
+          <Route path="/officer/performance" element={withLoader(<ProtectedRoute roles={['officer', 'admin']} redirectTo={homeRoute}><OfficerPerformance /></ProtectedRoute>)} />
           <Route path="/officer/nearby" element={withLoader(<ProtectedRoute roles={['officer', 'admin']} redirectTo={homeRoute}><OfficerNearby /></ProtectedRoute>)} />
           <Route path="/officer/map" element={withLoader(<ProtectedRoute roles={['officer', 'admin']} redirectTo={homeRoute}><OfficerMap /></ProtectedRoute>)} />
           <Route path="/officer/ai" element={withLoader(<ProtectedRoute roles={['officer', 'admin']} redirectTo={homeRoute}><OfficerAI /></ProtectedRoute>)} />

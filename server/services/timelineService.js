@@ -120,6 +120,81 @@ async function changeStatus(complaintId, toStatus, changedBy, note) {
         }
       }
 
+      // Reputation & Points Lifecycle Hook
+      try {
+        const pointService = require('./pointService');
+        if (toStatus === 'resolved') {
+          // 1. Award Citizen Resolution Points
+          if (complaint.user_id) {
+            await pointService.awardPoints({
+              userId: complaint.user_id,
+              role: 'citizen',
+              complaintId,
+              eventType: 'COMPLAINT_RESOLVED',
+              reason: 'Complaint successfully resolved'
+            });
+          }
+          // 2. Award Officer Resolution Points & SLA Bonus / Penalty
+          if (complaint.officer_id) {
+            await pointService.awardPoints({
+              userId: complaint.officer_id,
+              role: 'officer',
+              complaintId,
+              eventType: 'OFFICER_RESOLVED',
+              reason: 'Assigned complaint resolved'
+            });
+
+            // SLA Performance Check
+            const now = new Date();
+            const slaDue = complaint.sla_due_at ? new Date(complaint.sla_due_at) : null;
+            if (!slaDue || now <= slaDue) {
+              await pointService.awardPoints({
+                userId: complaint.officer_id,
+                role: 'officer',
+                complaintId,
+                eventType: 'OFFICER_SLA_BONUS',
+                reason: 'Complaint resolved within SLA deadline'
+              });
+            } else {
+              await pointService.deductPoints({
+                userId: complaint.officer_id,
+                role: 'officer',
+                complaintId,
+                eventType: 'OFFICER_SLA_VIOLATION',
+                reason: 'Resolution completed past SLA window'
+              });
+            }
+          }
+        } else if (toStatus === 'reopened') {
+          // Penalty for reopened resolution
+          if (complaint.officer_id) {
+            await pointService.deductPoints({
+              userId: complaint.officer_id,
+              role: 'officer',
+              complaintId,
+              eventType: 'RESOLUTION_REOPENED',
+              reason: 'Resolution reopened for further review'
+            });
+          }
+        } else if (toStatus === 'rejected') {
+          // Only penalize if confirmed false / abusive
+          const lowerNote = (note || '').toLowerCase();
+          if (lowerNote.includes('false') || lowerNote.includes('spam') || lowerNote.includes('abusive') || lowerNote.includes('fake')) {
+            if (complaint.user_id) {
+              await pointService.deductPoints({
+                userId: complaint.user_id,
+                role: 'citizen',
+                complaintId,
+                eventType: 'FALSE_COMPLAINT',
+                reason: 'Confirmed false/abusive complaint report'
+              });
+            }
+          }
+        }
+      } catch (ptErr) {
+        logger.warn('[timelineService] Point hook warning:', ptErr.message);
+      }
+
       // Real-time event dispatch
       try {
         const realtimeGateway = require('./realtimeGateway');

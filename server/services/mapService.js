@@ -49,27 +49,27 @@ async function getBboxComplaints(minLng, minLat, maxLng, maxLat, {
     parseFloat(maxLat)
   ];
 
-  if (status && status !== 'all') {
+  if (status && status !== 'all' && status !== 'null' && status !== 'undefined') {
     params.push(status.toLowerCase());
     conditions.push(`LOWER(c.status) = $${params.length}`);
   }
 
-  if (category && category !== 'all') {
+  if (category && category !== 'all' && category !== 'null' && category !== 'undefined') {
     params.push(category.toLowerCase());
     conditions.push(`LOWER(c.category) = $${params.length}`);
   }
 
-  if (priority && priority !== 'all') {
+  if (priority && priority !== 'all' && priority !== 'null' && priority !== 'undefined') {
     params.push(priority.toLowerCase());
     conditions.push(`LOWER(c.priority) = $${params.length}`);
   }
 
-  if (departmentId && departmentId !== 'all') {
+  if (departmentId && departmentId !== 'all' && departmentId !== 'null' && departmentId !== 'undefined') {
     params.push(parseInt(departmentId, 10));
     conditions.push(`c.department_id = $${params.length}`);
   }
 
-  if (officerId && officerId !== 'all') {
+  if (officerId && officerId !== 'all' && officerId !== 'null' && officerId !== 'undefined') {
     params.push(parseInt(officerId, 10));
     conditions.push(`c.officer_id = $${params.length}`);
   }
@@ -201,15 +201,15 @@ async function getSpatialClusters(minLng, minLat, maxLng, maxLat, zoom = 10, {
   ];
   const params = [parseFloat(minLng), parseFloat(minLat), parseFloat(maxLng), parseFloat(maxLat), gridSize];
 
-  if (status && status !== 'all') {
+  if (status && status !== 'all' && status !== 'null' && status !== 'undefined') {
     params.push(status.toLowerCase());
     conditions.push(`LOWER(c.status) = $${params.length}`);
   }
-  if (category && category !== 'all') {
+  if (category && category !== 'all' && category !== 'null' && category !== 'undefined') {
     params.push(category.toLowerCase());
     conditions.push(`LOWER(c.category) = $${params.length}`);
   }
-  if (priority && priority !== 'all') {
+  if (priority && priority !== 'all' && priority !== 'null' && priority !== 'undefined') {
     params.push(priority.toLowerCase());
     conditions.push(`LOWER(c.priority) = $${params.length}`);
   }
@@ -261,12 +261,12 @@ async function getHeatmapData(bbox = null, zoom = 10, weightBy = 'density', filt
       conditions.push(`c.location::geometry && ST_MakeEnvelope($1, $2, $3, $4, 4326)`);
     }
 
-    if (filters.category && filters.category !== 'all') {
+    if (filters.category && filters.category !== 'all' && filters.category !== 'null' && filters.category !== 'undefined') {
       params.push(filters.category.toLowerCase());
       conditions.push(`LOWER(c.category) = $${params.length}`);
     }
 
-    if (filters.status && filters.status !== 'all') {
+    if (filters.status && filters.status !== 'all' && filters.status !== 'null' && filters.status !== 'undefined') {
       params.push(filters.status.toLowerCase());
       conditions.push(`LOWER(c.status) = $${params.length}`);
     }
