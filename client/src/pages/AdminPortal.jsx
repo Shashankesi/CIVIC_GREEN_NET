@@ -15,6 +15,7 @@ import MapView from '../components/MapView'
 import Timeline from '../components/Timeline'
 import { STATUS_OPTIONS, PRIORITY_OPTIONS, CATEGORY_OPTIONS, TIME_OPTIONS, RADIUS_OPTIONS } from '../config/mapConfig'
 import adminApi from '../services/admin'
+import officerApi from '../services/officer'
 import notificationsApi from '../services/notifications'
 import AdminShell from '../components/AdminShell'
 import CommandCenterOverview from '../components/admin/CommandCenterOverview'
@@ -228,11 +229,26 @@ function PriorityPill({ priority }) {
 }
 
 // ── Full-Page Admin Case Workspace ───────────────────────────────────────────
-function AdminCaseWorkspace({ complaintId, onBack, officers, departments, onRefreshQueue }) {
+function AdminCaseWorkspace({ complaintId, onBack, officers: initialOfficers = [], departments: initialDepartments = [], onRefreshQueue }) {
   const [complaint, setComplaint] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [caseTab, setCaseTab] = useState('overview') // 'overview', 'timeline', 'assignment', 'evidence', 'ai', 'audit'
+
+  // Departments & Officers State
+  const [deptList, setDeptList] = useState(initialDepartments || [])
+  const [deptOfficers, setDeptOfficers] = useState([])
+  const [loadingOfficers, setLoadingOfficers] = useState(false)
+
+  // Teams & Resource Requests
+  const [supportTeam, setSupportTeam] = useState(null)
+  const [resourceRequests, setResourceRequests] = useState([])
+  const [teamModalOpen, setTeamModalOpen] = useState(false)
+  const [selectedReqForApproval, setSelectedReqForApproval] = useState(null)
+  const [customTeamName, setCustomTeamName] = useState('')
+  const [customMembersText, setCustomMembersText] = useState('')
+  const [reworkModalOpen, setReworkModalOpen] = useState(false)
+  const [reworkReason, setReworkReason] = useState('')
 
   // Edit State
   const [status, setStatus] = useState('open')
@@ -242,10 +258,45 @@ function AdminCaseWorkspace({ complaintId, onBack, officers, departments, onRefr
   const [saving, setSaving] = useState(false)
   const [lightboxIndex, setLightboxIndex] = useState(null)
 
-  // Reassignment Modal State
+  // Modals State
   const [reassignModalOpen, setReassignModalOpen] = useState(false)
   const [statusModalOpen, setStatusModalOpen] = useState(false)
   const [pendingStatus, setPendingStatus] = useState('')
+
+  // Fetch all departments if not supplied
+  useEffect(() => {
+    if (!deptList || deptList.length === 0) {
+      adminApi.listDepartments().then(d => {
+        setDeptList(Array.isArray(d) ? d : (d?.items || []));
+      }).catch(() => {});
+    }
+  }, [deptList]);
+
+  // Load Department Officers dynamically whenever departmentId changes
+  const loadDeptOfficers = useCallback(async (targetDeptId) => {
+    setLoadingOfficers(true);
+    try {
+      const res = await adminApi.listOfficers({ departmentId: targetDeptId || null });
+      const list = Array.isArray(res) ? res : (res?.items || res?.officers || []);
+      setDeptOfficers(list);
+    } catch (e) {
+      setDeptOfficers([]);
+    } finally {
+      setLoadingOfficers(false);
+    }
+  }, []);
+
+  const fetchTeamAndResources = useCallback(async (cid) => {
+    if (!cid) return;
+    try {
+      const [teamData, reqsData] = await Promise.all([
+        officerApi.getComplaintTeam(cid).catch(() => null),
+        officerApi.getResourceRequests(cid).catch(() => [])
+      ]);
+      setSupportTeam(teamData);
+      setResourceRequests(Array.isArray(reqsData) ? reqsData : (reqsData?.items || []));
+    } catch (e) {}
+  }, []);
 
   const fetchDetails = useCallback(async () => {
     if (!complaintId) return;
@@ -256,18 +307,31 @@ function AdminCaseWorkspace({ complaintId, onBack, officers, departments, onRefr
       setComplaint(data);
       setStatus(data.status || 'open');
       setPriority(data.priority || 'medium');
-      setDepartmentId(data.department_id ? String(data.department_id) : '');
-      setOfficerId(data.officer_id ? String(data.officer_id) : '');
+      const dId = data.department_id ? String(data.department_id) : '';
+      const oId = data.officer_id ? String(data.officer_id) : '';
+      setDepartmentId(dId);
+      setOfficerId(oId);
+
+      // Load officers for this department immediately
+      loadDeptOfficers(dId);
+      fetchTeamAndResources(complaintId);
     } catch (err) {
       setError(err?.response?.data?.message || 'Unable to load complaint case file.');
     } finally {
       setLoading(false);
     }
-  }, [complaintId]);
+  }, [complaintId, loadDeptOfficers, fetchTeamAndResources]);
 
   useEffect(() => {
     fetchDetails();
   }, [fetchDetails]);
+
+  // When department changes in UI, reload officers
+  const handleDepartmentChange = (newDeptId) => {
+    setDepartmentId(newDeptId);
+    setOfficerId(''); // reset officer if department switches
+    loadDeptOfficers(newDeptId);
+  };
 
   // 15s background polling for live updates
   useEffect(() => {
@@ -275,15 +339,17 @@ function AdminCaseWorkspace({ complaintId, onBack, officers, departments, onRefr
       adminApi.getAdminComplaint(complaintId).then((d) => {
         if (d) setComplaint(d);
       }).catch(() => {});
+      fetchTeamAndResources(complaintId);
     }, 15000);
     return () => clearInterval(timer);
-  }, [complaintId]);
+  }, [complaintId, fetchTeamAndResources]);
 
-  // Filter officers based on selected department
-  const filteredOfficers = useMemo(() => {
-    if (!departmentId) return officers;
-    return officers.filter(o => String(o.department_id) === String(departmentId));
-  }, [officers, departmentId]);
+  // Deterministic lowest workload recommendation
+  const recommendedOfficer = useMemo(() => {
+    if (!deptOfficers || deptOfficers.length === 0) return null;
+    const sorted = [...deptOfficers].sort((a, b) => (a.currentWorkload || a.activeAssignments || 0) - (b.currentWorkload || b.activeAssignments || 0));
+    return sorted[0];
+  }, [deptOfficers]);
 
   // Valid next status options map
   const availableNextStatuses = useMemo(() => {
@@ -292,13 +358,16 @@ function AdminCaseWorkspace({ complaintId, onBack, officers, departments, onRefr
     switch (cur) {
       case 'open':
       case 'pending':
-        return ['in_progress', 'rejected'];
+        return ['assigned', 'in_progress', 'rejected'];
+      case 'assigned':
+      case 'accepted':
+        return ['in_progress', 'resolved', 'rejected'];
       case 'in_progress':
         return ['resolved', 'rejected'];
       case 'resolved':
         return ['closed', 'reopened'];
       case 'reopened':
-        return ['in_progress', 'resolved'];
+        return ['assigned', 'in_progress', 'resolved'];
       case 'closed':
         return ['reopened'];
       case 'rejected':
@@ -308,21 +377,22 @@ function AdminCaseWorkspace({ complaintId, onBack, officers, departments, onRefr
     }
   }, [complaint]);
 
-  async function handleApplyChanges(overrideStatus, overrideDept, overrideOfficer) {
+  async function handleApplyChanges(overrideStatus, overrideDept, overrideOfficer, overridePriority) {
     setSaving(true);
     try {
       const targetSt = overrideStatus || status;
       const targetDept = overrideDept !== undefined ? overrideDept : departmentId;
       const targetOfficer = overrideOfficer !== undefined ? overrideOfficer : officerId;
+      const targetPriority = overridePriority || priority;
 
       const fields = {
         status: targetSt,
-        priority,
+        priority: targetPriority,
         department_id: targetDept ? parseInt(targetDept, 10) : null,
         officer_id: targetOfficer ? parseInt(targetOfficer, 10) : null
       };
       await adminApi.updateAdminComplaint(complaint.id, fields);
-      toast.success('Case changes saved successfully');
+      toast.success('Case assignment updated successfully');
       fetchDetails();
       if (onRefreshQueue) onRefreshQueue();
     } catch (e) {
@@ -331,6 +401,69 @@ function AdminCaseWorkspace({ complaintId, onBack, officers, departments, onRefr
       setSaving(false);
       setReassignModalOpen(false);
       setStatusModalOpen(false);
+    }
+  }
+
+  // Administrative Resolution Verification Handler
+  async function handleVerifyResolution(action, note) {
+    setSaving(true);
+    try {
+      await adminApi.verifyResolutionAdmin(complaint.id, {
+        action,
+        note: note || (action === 'verify' ? 'Administrative verification passed' : 'Rework requested'),
+        reason: note
+      });
+      toast.success(action === 'verify' ? 'Complaint resolution verified & closed' : 'Complaint reopened for rework');
+      setReworkModalOpen(false);
+      setReworkReason('');
+      fetchDetails();
+      if (onRefreshQueue) onRefreshQueue();
+    } catch (e) {
+      toast.error(e?.response?.data?.message || 'Failed to process verification');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Approve Resource Request Handler
+  async function handleApproveResourceRequest() {
+    if (!selectedReqForApproval) return;
+    setSaving(true);
+    try {
+      const members = customMembersText
+        ? customMembersText.split(',').map(m => ({ name: m.trim(), role: 'Crew Member' })).filter(m => m.name)
+        : [];
+
+      await adminApi.approveResourceRequest(selectedReqForApproval.id, {
+        teamName: customTeamName || undefined,
+        memberNames: members.length > 0 ? members : undefined
+      });
+      toast.success('Support team dispatched & resource request approved');
+      setTeamModalOpen(false);
+      setSelectedReqForApproval(null);
+      setCustomTeamName('');
+      setCustomMembersText('');
+      fetchTeamAndResources(complaint.id);
+      fetchDetails();
+    } catch (e) {
+      toast.error(e?.response?.data?.message || 'Failed to approve resource request');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Reject Resource Request Handler
+  async function handleRejectResourceRequest(reqId) {
+    const reason = window.prompt('Please enter the reason for declining this resource request:') || 'Declined by administration';
+    setSaving(true);
+    try {
+      await adminApi.rejectResourceRequest(reqId, { reason });
+      toast.success('Resource request declined');
+      fetchTeamAndResources(complaint.id);
+    } catch (e) {
+      toast.error(e?.response?.data?.message || 'Failed to decline request');
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -389,7 +522,7 @@ function AdminCaseWorkspace({ complaintId, onBack, officers, departments, onRefr
           onClick={onBack}
           className="inline-flex items-center gap-2 text-xs font-bold text-slate-600 hover:text-emerald-600 dark:text-slate-400 dark:hover:text-emerald-400 transition-colors shrink-0"
         >
-          <ArrowLeft className="h-4 w-4" /> ← Back to Complaints
+          <ArrowLeft className="h-4 w-4" /> ← Back to Complaints Queue
         </button>
         <div className="flex items-center gap-2">
           <span className="text-xs font-mono font-extrabold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/40 px-3 py-1 rounded-lg border border-purple-200 dark:border-purple-800/60">
@@ -408,6 +541,11 @@ function AdminCaseWorkspace({ complaintId, onBack, officers, departments, onRefr
               {complaint.category && (
                 <span className="inline-flex items-center rounded-full bg-slate-100 dark:bg-slate-800 px-3 py-0.5 text-xs font-bold text-slate-700 dark:text-slate-300 capitalize border border-slate-200 dark:border-slate-700">
                   {complaint.category.replace('_', ' ')}
+                </span>
+              )}
+              {supportTeam && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 dark:bg-indigo-950/50 px-3 py-0.5 text-xs font-extrabold text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                  <Users className="h-3 w-3" /> Team: {supportTeam.team_name}
                 </span>
               )}
             </div>
@@ -444,12 +582,55 @@ function AdminCaseWorkspace({ complaintId, onBack, officers, departments, onRefr
         </div>
       </div>
 
+      {/* RESOLUTION QUALITY VERIFICATION BANNER (if status === 'resolved') */}
+      {complaint.status === 'resolved' && (
+        <div className="card bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-800 p-5 rounded-2xl shadow-xs space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-emerald-600 text-white rounded-xl shadow-xs">
+                <CheckCircle2 className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-emerald-900 dark:text-emerald-100">
+                  Resolution Verification Required
+                </h3>
+                <p className="text-xs text-emerald-700 dark:text-emerald-300">
+                  Assigned officer has marked this case resolved. Please review field proof before closing.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button
+                onClick={() => handleVerifyResolution('verify')}
+                disabled={saving}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2 px-4 shadow-sm"
+              >
+                <CheckCircle className="h-3.5 w-3.5 mr-1" /> Verify & Close Case
+              </Button>
+              <Button
+                onClick={() => setReworkModalOpen(true)}
+                disabled={saving}
+                className="bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs py-2 px-4 shadow-sm"
+              >
+                <RefreshCw className="h-3.5 w-3.5 mr-1" /> Request Rework / Reopen
+              </Button>
+            </div>
+          </div>
+          {complaint.resolution_note && (
+            <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-emerald-200 dark:border-emerald-800 text-xs">
+              <span className="font-bold text-slate-700 dark:text-slate-300">Officer Resolution Note: </span>
+              <span className="text-slate-600 dark:text-slate-400 italic font-medium">"{complaint.resolution_note}"</span>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* 3. Tabbed Case Navigation Bar */}
       <div className="flex border-b border-slate-200 dark:border-slate-800 space-x-1 overflow-x-auto">
         {[
           { key: 'overview', label: 'Overview', icon: FileText },
           { key: 'timeline', label: 'Timeline', icon: Clock },
-          { key: 'assignment', label: 'Assignment', icon: UserCheck },
+          { key: 'assignment', label: 'Assignment & Crew', icon: UserCheck },
           { key: 'evidence', label: 'Evidence', icon: ImageIcon },
           { key: 'ai', label: 'AI Analysis', icon: Sparkles },
           { key: 'audit', label: 'Audit', icon: ShieldCheck }
@@ -473,181 +654,248 @@ function AdminCaseWorkspace({ complaintId, onBack, officers, departments, onRefr
                   {images.length}
                 </span>
               )}
+              {tb.key === 'assignment' && resourceRequests.filter(r => r.status === 'pending').length > 0 && (
+                <span className="ml-1 px-1.5 py-0.2 rounded-full bg-amber-500 text-white text-[10px] font-extrabold animate-pulse">
+                  {resourceRequests.filter(r => r.status === 'pending').length} Req
+                </span>
+              )}
             </button>
           );
         })}
       </div>
 
-      {/* 4. Main 2-Column Content Area */}
+      {/* 4. Tab Content & Workspace Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* Left Column (Spans 2 columns) */}
+
+        {/* LEFT TWO COLUMNS: Tab Content */}
         <div className="lg:col-span-2 space-y-6">
-          
+
           {/* TAB 1: OVERVIEW */}
           {caseTab === 'overview' && (
             <div className="space-y-6">
-              
-              {/* Description & Citizen Report Card */}
               <div className="card bg-white p-6 dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
                 <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-2">
-                  <FileText className="h-4 w-4 text-emerald-500" /> Citizen Report Summary
+                  <FileText className="h-4 w-4 text-emerald-500" /> Incident Description
                 </h3>
-                <div>
-                  <h4 className="text-sm font-bold text-slate-850 dark:text-slate-100 mb-1">{complaint.title}</h4>
-                  <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed font-medium whitespace-pre-wrap">
-                    {complaint.description || 'No detailed description provided.'}
-                  </p>
-                </div>
+                <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed font-normal whitespace-pre-wrap">
+                  {complaint.description || 'No description provided.'}
+                </p>
+              </div>
 
-                <div className="pt-3 border-t border-slate-100 dark:border-slate-800 grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+              {/* Citizen Details */}
+              <div className="card bg-white p-6 dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
+                <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+                  <User className="h-4 w-4 text-emerald-500" /> Reporting Citizen Details
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
                   <div>
                     <span className="block text-2xs font-extrabold uppercase text-slate-400">Citizen Name</span>
-                    <span className="font-semibold text-slate-800 dark:text-slate-200">{citizen}</span>
+                    <span className="font-bold text-slate-800 dark:text-slate-200">{citizen}</span>
                   </div>
                   <div>
-                    <span className="block text-2xs font-extrabold uppercase text-slate-400">Contact Email</span>
-                    <span className="font-semibold text-slate-800 dark:text-slate-200">
-                      {!complaint.is_anonymous && complaint.citizen_email ? complaint.citizen_email : '—'}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="block text-2xs font-extrabold uppercase text-slate-400">Contact Phone</span>
-                    <span className="font-semibold text-slate-800 dark:text-slate-200">
-                      {!complaint.is_anonymous && complaint.citizen_phone ? complaint.citizen_phone : '—'}
+                    <span className="block text-2xs font-extrabold uppercase text-slate-400">Contact Email / Phone</span>
+                    <span className="font-bold text-slate-800 dark:text-slate-200">
+                      {complaint.citizen_email || complaint.citizen_phone || 'Confidential / Anonymous'}
                     </span>
                   </div>
                 </div>
               </div>
 
-              {/* Geographic Location Map */}
-              {complaint.lat && complaint.lng && (
-                <div className="card bg-white p-6 dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
-                  <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-2">
-                    <MapPin className="h-4 w-4 text-emerald-500" /> Location Map
-                  </h3>
-                  <div className="text-xs text-slate-600 dark:text-slate-300 font-semibold mb-2">
-                    {complaint.address}
-                  </div>
-                  <MapView
-                    complaints={[complaint]}
-                    center={[parseFloat(complaint.lng), parseFloat(complaint.lat)]}
-                    zoom={15}
-                    height="240px"
-                  />
-                </div>
-              )}
-
-              {/* Current Actions Panel */}
-              <div className="card bg-white p-6 dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+              {/* Geographic Coordinates & Location */}
+              <div className="card bg-white p-6 dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
                 <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-2">
-                  <Activity className="h-4 w-4 text-emerald-500" /> Operational Status Controls
+                  <MapPin className="h-4 w-4 text-emerald-500" /> Location & Ward GIS Data
                 </h3>
-                <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-center justify-between">
-                  <div>
-                    <span className="text-2xs font-extrabold uppercase text-slate-400 block">Current Status</span>
-                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 capitalize">
-                      {complaint.status}
-                    </span>
-                  </div>
-                  <StatusBadge status={complaint.status} type="status" />
-                </div>
-
-                <div className="space-y-2">
-                  <label className="block text-2xs font-extrabold uppercase text-slate-400">Available Next Actions</label>
-                  <div className="flex flex-wrap gap-2">
-                    {availableNextStatuses.map((st) => (
-                      <Button
-                        key={st}
-                        onClick={() => {
-                          setPendingStatus(st);
-                          setStatusModalOpen(true);
-                        }}
-                        disabled={saving}
-                        className={`text-xs font-bold py-2 px-3.5 shadow-xs ${
-                          st === 'in_progress' ? 'bg-blue-600 hover:bg-blue-700 text-white' :
-                          st === 'resolved' ? 'bg-emerald-600 hover:bg-emerald-700 text-white' :
-                          st === 'closed' ? 'bg-slate-900 hover:bg-black text-white' :
-                          st === 'reopened' ? 'bg-purple-600 hover:bg-purple-700 text-white' :
-                          'bg-red-600 hover:bg-red-700 text-white'
-                        }`}
-                      >
-                        Transition to {st === 'in_progress' ? 'In Progress' : st === 'reopened' ? 'Reopened' : st.charAt(0).toUpperCase() + st.slice(1)}
-                      </Button>
-                    ))}
-                  </div>
+                <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700 text-xs space-y-1">
+                  <p className="font-bold text-slate-850 dark:text-slate-100">{complaint.address || 'Address not resolved'}</p>
+                  <p className="text-2xs text-slate-500 font-mono">
+                    Latitude: {complaint.latitude || '—'} · Longitude: {complaint.longitude || '—'} · Ward ID: {complaint.ward_id || 'Ward 14'}
+                  </p>
                 </div>
               </div>
-
             </div>
           )}
 
           {/* TAB 2: TIMELINE */}
           {caseTab === 'timeline' && (
-            <div className="card bg-white p-6 dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-              <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-2">
-                <Clock className="h-4 w-4 text-emerald-500" /> Database-Driven Case History Timeline
-              </h3>
+            <div className="card bg-white p-6 dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
               <Timeline complaintId={complaint.id} />
             </div>
           )}
 
-          {/* TAB 3: ASSIGNMENT */}
+          {/* TAB 3: ASSIGNMENT & SUPPORT CREW */}
           {caseTab === 'assignment' && (
-            <div className="card bg-white p-6 dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
-              <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-2">
-                <UserCheck className="h-4 w-4 text-emerald-500" /> Case Assignment Workspace
-              </h3>
+            <div className="card bg-white p-6 dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+                <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+                  <UserCheck className="h-4 w-4 text-emerald-500" /> Department & Officer Assignment
+                </h3>
+                <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded">
+                  Live Workload Aggregation
+                </span>
+              </div>
 
+              {/* Current Assignment Status Summary */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs">
                 <div>
-                  <span className="block text-2xs font-extrabold uppercase text-slate-400">Current Department</span>
+                  <span className="block text-2xs font-extrabold uppercase text-slate-400">Assigned Department</span>
                   <span className="font-bold text-slate-850 dark:text-slate-100">{complaint.department_name || '— Unassigned —'}</span>
                 </div>
                 <div>
-                  <span className="block text-2xs font-extrabold uppercase text-slate-400">Current Officer</span>
+                  <span className="block text-2xs font-extrabold uppercase text-slate-400">Assigned Primary Officer</span>
                   <span className="font-bold text-slate-850 dark:text-slate-100">{complaint.officer_name ? `👤 ${complaint.officer_name}` : '— Unassigned —'}</span>
                 </div>
               </div>
 
-              <div className="space-y-4 pt-2">
-                <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wide">Change Case Assignment</h4>
+              {/* SUPPORT CREW CARD */}
+              {supportTeam ? (
+                <div className="p-4 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 text-xs space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-black text-indigo-900 dark:text-indigo-200 flex items-center gap-1.5">
+                      <Users className="h-4 w-4 text-indigo-600" /> Assigned Support Team: {supportTeam.team_name}
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-indigo-200 dark:bg-indigo-900 text-indigo-800 dark:text-indigo-200 text-[10px] font-bold">
+                      Active Crew
+                    </span>
+                  </div>
+                  <p className="text-indigo-700 dark:text-indigo-300 font-medium">
+                    Team Leader: <strong className="font-bold">{supportTeam.leader_name || complaint.officer_name || 'Officer'}</strong>
+                  </p>
+                  {supportTeam.members && supportTeam.members.length > 0 && (
+                    <div className="pt-2">
+                      <span className="block text-2xs font-bold text-indigo-500 uppercase mb-1">Assigned Field Crew:</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {supportTeam.members.map((m, idx) => (
+                          <span key={idx} className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-800 text-slate-700 dark:text-slate-300 font-semibold text-2xs">
+                            👤 {m.member_name} ({m.member_role || 'Field Crew'})
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 text-xs text-slate-500 flex items-center justify-between">
+                  <span>No auxiliary support team currently assigned to this complaint.</span>
+                </div>
+              )}
+
+              {/* RESOURCE REQUESTS SECTION */}
+              {resourceRequests.length > 0 && (
+                <div className="space-y-3 pt-2">
+                  <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wide flex items-center gap-2">
+                    <Layers className="h-4 w-4 text-amber-500" /> Officer Resource & Crew Requests ({resourceRequests.length})
+                  </h4>
+                  <div className="space-y-2">
+                    {resourceRequests.map((req) => (
+                      <div key={req.id} className="p-3.5 rounded-xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 font-bold text-amber-900 dark:text-amber-200">
+                            <span>Request: {req.request_type} ({req.required_people} Personnel)</span>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold uppercase ${
+                              req.status === 'approved' ? 'bg-emerald-100 text-emerald-800' :
+                              req.status === 'rejected' ? 'bg-rose-100 text-rose-800' :
+                              'bg-amber-200 text-amber-900'
+                            }`}>
+                              {req.status}
+                            </span>
+                          </div>
+                          <p className="text-slate-600 dark:text-slate-400 font-medium">"{req.reason}"</p>
+                          {req.required_skills && <p className="text-2xs text-slate-500">Skills needed: {req.required_skills}</p>}
+                        </div>
+                        {req.status === 'pending' && (
+                          <div className="flex items-center gap-2 shrink-0">
+                            <Button
+                              onClick={() => {
+                                setSelectedReqForApproval(req);
+                                setCustomTeamName(`${complaint.department_name || 'Municipal'} Crew #${complaint.id}`);
+                                setCustomMembersText('');
+                                setTeamModalOpen(true);
+                              }}
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-1.5 px-3 shadow-xs"
+                            >
+                              Approve & Assign Crew
+                            </Button>
+                            <Button
+                              onClick={() => handleRejectResourceRequest(req.id)}
+                              className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs py-1.5 px-2.5 shadow-xs"
+                            >
+                              Decline
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* CHANGE ASSIGNMENT FORM */}
+              <div className="space-y-4 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wide">Update Case Assignment</h4>
+
+                {recommendedOfficer && (
+                  <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs flex items-center justify-between">
+                    <span className="text-emerald-800 dark:text-emerald-300 font-medium">
+                      💡 Recommended: <strong className="font-bold">{recommendedOfficer.name}</strong> ({recommendedOfficer.currentWorkload || 0} active cases · SLA: {recommendedOfficer.slaRisk || 'Low'})
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setOfficerId(String(recommendedOfficer.id))}
+                      className="px-2.5 py-1 rounded bg-emerald-600 text-white font-bold text-2xs hover:bg-emerald-700 transition-colors"
+                    >
+                      Select Recommended
+                    </button>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-2xs font-bold text-slate-600 dark:text-slate-400 mb-1">Select Department</label>
+                    <label className="block text-2xs font-bold text-slate-600 dark:text-slate-400 mb-1">Department</label>
                     <select
                       value={departmentId}
-                      onChange={(e) => setDepartmentId(e.target.value)}
+                      onChange={(e) => handleDepartmentChange(e.target.value)}
                       className="w-full text-xs rounded-xl border border-slate-300 bg-white p-2.5 font-semibold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                     >
-                      <option value="">— Unassigned Department —</option>
-                      {departments.map(d => (
+                      <option value="">— Select Department —</option>
+                      {deptList.map(d => (
                         <option key={d.id} value={d.id}>{d.name}</option>
                       ))}
                     </select>
                   </div>
 
                   <div>
-                    <label className="block text-2xs font-bold text-slate-600 dark:text-slate-400 mb-1">Select Officer</label>
+                    <label className="block text-2xs font-bold text-slate-600 dark:text-slate-400 mb-1">
+                      Assign Primary Officer {loadingOfficers && <span className="text-slate-400 text-2xs font-normal">(Loading...)</span>}
+                    </label>
                     <select
                       value={officerId}
                       onChange={(e) => setOfficerId(e.target.value)}
+                      disabled={loadingOfficers}
                       className="w-full text-xs rounded-xl border border-slate-300 bg-white p-2.5 font-semibold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                     >
-                      <option value="">— Unassigned Officer —</option>
-                      {filteredOfficers.map(o => (
-                        <option key={o.id} value={o.id}>{o.name}</option>
+                      <option value="">— Select Active Officer —</option>
+                      {deptOfficers.map(o => (
+                        <option key={o.id} value={o.id}>
+                          {o.name} — {o.designation || 'Officer'} ({o.currentWorkload || o.activeAssignments || 0} active, Overdue: {o.overdueCount || 0}, SLA: {o.slaRisk || 'Low'})
+                        </option>
                       ))}
                     </select>
                   </div>
                 </div>
+
+                {departmentId && deptOfficers.length === 0 && !loadingOfficers && (
+                  <p className="text-2xs font-bold text-amber-600 dark:text-amber-400">
+                    ⚠️ No active officers are currently available for this department.
+                  </p>
+                )}
 
                 <Button
                   onClick={() => setReassignModalOpen(true)}
                   disabled={saving}
                   className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2.5 px-6 shadow-sm"
                 >
-                  Assign / Reassign Complaint
+                  {saving ? 'Saving Assignment...' : 'Save & Dispatch Assignment'}
                 </Button>
               </div>
             </div>
@@ -806,33 +1054,38 @@ function AdminCaseWorkspace({ complaintId, onBack, officers, departments, onRefr
               </div>
             </div>
 
-            {/* Save Case Changes */}
+            {/* Quick Operational Controls */}
             <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-3">
-              <h4 className="text-2xs font-extrabold uppercase text-slate-400">Quick Operational Controls</h4>
+              <h4 className="text-2xs font-extrabold uppercase text-slate-400">Quick Assignment Controls</h4>
               <div>
                 <label className="block text-2xs font-bold text-slate-600 dark:text-slate-400 mb-1">Department</label>
                 <select
                   value={departmentId}
-                  onChange={(e) => setDepartmentId(e.target.value)}
+                  onChange={(e) => handleDepartmentChange(e.target.value)}
                   className="w-full text-xs rounded-lg border border-slate-200 bg-white p-2 font-medium text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
                 >
                   <option value="">— Unassigned —</option>
-                  {departments.map(d => (
+                  {deptList.map(d => (
                     <option key={d.id} value={d.id}>{d.name}</option>
                   ))}
                 </select>
               </div>
 
               <div>
-                <label className="block text-2xs font-bold text-slate-600 dark:text-slate-400 mb-1">Officer</label>
+                <label className="block text-2xs font-bold text-slate-600 dark:text-slate-400 mb-1">
+                  Officer {loadingOfficers && <span className="text-slate-400 font-normal">(Loading...)</span>}
+                </label>
                 <select
                   value={officerId}
                   onChange={(e) => setOfficerId(e.target.value)}
+                  disabled={loadingOfficers}
                   className="w-full text-xs rounded-lg border border-slate-200 bg-white p-2 font-medium text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
                 >
                   <option value="">— Unassigned —</option>
-                  {filteredOfficers.map(o => (
-                    <option key={o.id} value={o.id}>{o.name}</option>
+                  {deptOfficers.map(o => (
+                    <option key={o.id} value={o.id}>
+                      {o.name} ({o.currentWorkload || 0} active, SLA: {o.slaRisk || 'Low'})
+                    </option>
                   ))}
                 </select>
               </div>
@@ -852,7 +1105,7 @@ function AdminCaseWorkspace({ complaintId, onBack, officers, departments, onRefr
               </div>
 
               <Button
-                onClick={() => handleApplyChanges()}
+                onClick={() => handleApplyChanges(status, departmentId, officerId, priority)}
                 disabled={saving}
                 className="w-full bg-slate-900 hover:bg-black text-white font-bold text-xs py-2.5 shadow-sm"
               >
@@ -880,17 +1133,17 @@ function AdminCaseWorkspace({ complaintId, onBack, officers, departments, onRefr
       {reassignModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
           <div className="card bg-white dark:bg-slate-900 max-w-md w-full p-6 space-y-4 border-slate-200 dark:border-slate-800 shadow-xl">
-            <h3 className="text-base font-bold text-slate-900 dark:text-white">REASSIGN COMPLAINT CASE?</h3>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">ASSIGN / REASSIGN COMPLAINT CASE?</h3>
             <p className="text-xs text-slate-500 leading-relaxed">
-              Confirm reassigning complaint <strong className="text-purple-600">#CGN-{formattedId}</strong> to new department or officer.
+              Confirm assigning complaint <strong className="text-purple-600">#CGN-{formattedId}</strong> to the selected department and officer.
             </p>
 
             <div className="flex items-center justify-end gap-2 pt-3">
               <Button onClick={() => setReassignModalOpen(false)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs py-2 px-4">
                 Cancel
               </Button>
-              <Button onClick={() => handleApplyChanges(status, departmentId, officerId)} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs py-2 px-4 font-bold">
-                Confirm Reassignment
+              <Button onClick={() => handleApplyChanges(status, departmentId, officerId, priority)} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs py-2 px-4 font-bold">
+                Confirm Assignment
               </Button>
             </div>
           </div>
@@ -910,7 +1163,7 @@ function AdminCaseWorkspace({ complaintId, onBack, officers, departments, onRefr
               <Button onClick={() => setStatusModalOpen(false)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs py-2 px-4">
                 Cancel
               </Button>
-              <Button onClick={() => handleApplyChanges(pendingStatus, departmentId, officerId)} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs py-2 px-4 font-bold">
+              <Button onClick={() => handleApplyChanges(pendingStatus, departmentId, officerId, priority)} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs py-2 px-4 font-bold">
                 Confirm Status Transition
               </Button>
             </div>
@@ -1671,8 +1924,9 @@ export default function AdminPortal() {
       if (dueSoon) params.dueSoon = dueSoon
       if (overdue) params.overdue = overdue
       const r = await adminApi.listAdminComplaints(params)
-      setComplaints(r?.items || [])
-      setComplaintsTotal(r?.total || 0)
+      const list = r?.items || (Array.isArray(r) ? r : [])
+      setComplaints(list)
+      setComplaintsTotal(typeof r?.total === 'number' ? r.total : list.length)
     } catch (e) {
       const msg = e?.response?.data?.message || e?.message || 'Could not load complaints'
       setComplaintsError({ message: msg, endpoint: 'GET /api/admin/complaints' })
@@ -1941,6 +2195,8 @@ export default function AdminPortal() {
       setComplaintStatusFilter('in_progress')
     } else if (chip === 'resolved') {
       setComplaintStatusFilter('resolved')
+    } else if (chip === 'reopened') {
+      setComplaintStatusFilter('reopened')
     } else if (chip === 'closed') {
       setComplaintStatusFilter('closed')
     }
@@ -1948,6 +2204,8 @@ export default function AdminPortal() {
 
   // ── Tab activation effect (Fires when tab changes) ─────────────────────────
   useEffect(() => {
+    loadDepartments()
+    loadOfficers()
     if (tab === 'overview' || !tab) {
       loadDashboard()
     } else if (tab === 'users') {
@@ -1961,7 +2219,6 @@ export default function AdminPortal() {
       loadNotifications(1)
     } else if (tab === 'officer-approvals') {
       loadOfficerApprovals(null, 1)
-      loadOfficers()
     } else if (tab === 'system-health') {
       loadSystemHealth()
     }
@@ -2382,6 +2639,16 @@ export default function AdminPortal() {
                 activeCls: 'bg-emerald-600 text-white border-emerald-600 shadow-sm',
                 badgeInactiveCls: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200',
                 badgeActiveCls: 'bg-emerald-700/80 text-white'
+              },
+              {
+                key: 'reopened',
+                label: 'Reopened',
+                count: dashData?.complaints?.reopened || 0,
+                icon: RefreshCw,
+                inactiveCls: 'bg-purple-50/90 text-purple-800 border-purple-200 hover:bg-purple-100/80 dark:bg-purple-950/30 dark:text-purple-300 dark:border-purple-800/50',
+                activeCls: 'bg-purple-600 text-white border-purple-600 shadow-sm',
+                badgeInactiveCls: 'bg-purple-100 text-purple-800 dark:bg-purple-900/60 dark:text-purple-200',
+                badgeActiveCls: 'bg-purple-700/80 text-white'
               },
               {
                 key: 'closed',

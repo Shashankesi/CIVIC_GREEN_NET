@@ -73,10 +73,57 @@ async function deleteDepartment(id) {
   await db.query('DELETE FROM departments WHERE id=$1', [id]);
 }
 
-async function listOfficers() {
-  const q = "SELECT id, name, email, department_id, employee_id, status FROM users WHERE role='officer' AND status IN ('active', 'approved') ORDER BY name ASC";
-  const r = await db.query(q);
-  return r.rows;
+async function listOfficers({ departmentId = null } = {}) {
+  const conditions = ["u.role = 'officer'", "u.status IN ('active', 'approved')"];
+  const vals = [];
+  let idx = 1;
+
+  if (departmentId) {
+    conditions.push(`u.department_id = $${idx++}`);
+    vals.push(parseInt(departmentId, 10));
+  }
+
+  const q = `
+    SELECT
+      u.id,
+      u.id AS user_id,
+      u.name,
+      u.email,
+      u.department_id,
+      d.name AS department_name,
+      COALESCE(u.designation, u.settings->>'designation', 'Field Officer') AS designation,
+      COALESCE(u.employee_id, u.settings->>'employee_id') AS employee_id,
+      u.status,
+      true AS active,
+      COUNT(CASE WHEN c.status IN ('assigned', 'accepted', 'in_progress', 'reopened') THEN 1 END)::int AS active_assignments,
+      COUNT(CASE WHEN c.status IN ('assigned', 'accepted', 'in_progress', 'reopened') THEN 1 END)::int AS current_workload,
+      COUNT(CASE WHEN c.status NOT IN ('resolved', 'closed', 'rejected') AND c.sla_due_at < now() THEN 1 END)::int AS overdue_count,
+      COUNT(CASE WHEN c.status NOT IN ('resolved', 'closed', 'rejected') AND (c.priority IN ('critical', 'urgent', 'high') OR c.severity = 'critical') THEN 1 END)::int AS critical_count
+    FROM users u
+    LEFT JOIN departments d ON d.id = u.department_id
+    LEFT JOIN complaints c ON c.officer_id = u.id
+    WHERE ${conditions.join(' AND ')}
+    GROUP BY u.id, d.name
+    ORDER BY current_workload ASC, u.name ASC
+  `;
+
+  const r = await db.query(q, vals);
+  return r.rows.map(row => {
+    let slaRisk = 'Low';
+    if (row.overdue_count > 0 || row.critical_count >= 2) {
+      slaRisk = 'High';
+    } else if (row.active_assignments >= 4 || row.critical_count === 1) {
+      slaRisk = 'Medium';
+    }
+    return {
+      ...row,
+      currentWorkload: row.current_workload,
+      activeAssignments: row.active_assignments,
+      overdueCount: row.overdue_count,
+      criticalCount: row.critical_count,
+      slaRisk
+    };
+  });
 }
 
 module.exports = {

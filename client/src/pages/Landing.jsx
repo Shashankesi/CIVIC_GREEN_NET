@@ -18,6 +18,7 @@ import StatusBadge from '../ui/StatusBadge'
 import MapView from '../components/MapView'
 import { faqs, aiFeatureList, workflowSteps } from '../data/landing'
 import publicApi from '../services/publicApi'
+import { PUBLIC_MAP_CATEGORY_OPTIONS, PUBLIC_MAP_STATUS_OPTIONS } from '../config/categories'
 
 // ─── Animation Helper ────────────────────────────────────────────────────────
 function Reveal({ children, delay = 0, className = '' }) {
@@ -321,24 +322,9 @@ export default function Landing() {
     document.querySelector(id)?.scrollIntoView({ behavior: 'smooth' })
   }
 
-  // Categories list for interactive map filters
-  const mapCategoryOptions = [
-    { label: 'All Categories', value: 'all' },
-    { label: 'Roads', value: 'roads' },
-    { label: 'Sanitation', value: 'sanitation' },
-    { label: 'Street Lighting', value: 'lighting' },
-    { label: 'Water Supply', value: 'water' },
-    { label: 'Drainage', value: 'drainage' },
-    { label: 'Public Safety', value: 'safety' },
-    { label: 'Parks', value: 'parks' }
-  ]
-
-  const mapStatusOptions = [
-    { label: 'All Statuses', value: 'all' },
-    { label: 'Active Issues', value: 'active' },
-    { label: 'In Progress', value: 'in_progress' },
-    { label: 'Resolved / Closed', value: 'resolved' }
-  ]
+  // Categories and status options for interactive map filters
+  const mapCategoryOptions = PUBLIC_MAP_CATEGORY_OPTIONS
+  const mapStatusOptions = PUBLIC_MAP_STATUS_OPTIONS
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-surface-darker dark:text-slate-50 selection:bg-emerald-500 selection:text-white">

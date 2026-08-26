@@ -22,12 +22,28 @@ const logger = require('../../utils/logger');
 function fastMatchOfficerIntent(message) {
   const q = (message || '').toLowerCase().trim();
 
-  // 1. Complaint ID details pattern (e.g. CGN-00123, #123, complaint 55)
+  // 1. Complaint ID details pattern (e.g. CGN-00123, #123, complaint 55, complaint #73)
   const cgnMatch = q.match(/cgn-?\d+/i) || q.match(/complaint\s+#?(\d+)/i) || q.match(/#(\d+)/);
-  if (cgnMatch && (q.includes('tell me about') || q.includes('show') || q.includes('details') || q.includes('status') || q.includes('view') || q.includes('what is'))) {
+  if (cgnMatch) {
+    const rawId = cgnMatch[1] || cgnMatch[0].replace(/^#/, '');
+    const cleanId = rawId.toUpperCase().startsWith('CGN') ? rawId.toUpperCase() : `CGN-${String(rawId).padStart(5, '0')}`;
     return {
       intent: 'COMPLAINT_DETAILS',
-      parameters: { complaintId: cgnMatch[0].toUpperCase() }
+      parameters: { complaintId: cleanId }
+    };
+  }
+
+  // 1b. Case-Contextual Questions without explicit ID (uses last opened complaint context)
+  if (
+    q.includes('can i resolve') || q.includes('can we resolve') || q.includes('ready to resolve') ||
+    q.includes('need more people') || q.includes('need a team') || q.includes('request team') ||
+    q.includes('who is working with me') || q.includes('who is on my team') || q.includes('support team') ||
+    q.includes('evidence missing') || q.includes('what evidence is still missing') || q.includes('missing evidence') ||
+    q.includes('what should i do next') || q.includes('summarize case') || q.includes('summarize this complaint')
+  ) {
+    return {
+      intent: 'COMPLAINT_DETAILS',
+      parameters: {}
     };
   }
 
@@ -104,8 +120,8 @@ function fastMatchOfficerIntent(message) {
   // 11. Workload / Assignments
   if (
     q.includes('my workload') || q.includes('assigned to me') || q.includes('my work') ||
-    q.includes('active workload') || q.includes('how many complaints are assigned') ||
-    q.includes('my assignments') || q.includes('assigned complaints')
+    q.includes('active workload') || q.includes('how many complaints') || q.includes('active complaints') ||
+    q.includes('how many active') || q.includes('my assignments') || q.includes('assigned complaints')
   ) {
     return { intent: 'MY_WORKLOAD', parameters: {} };
   }

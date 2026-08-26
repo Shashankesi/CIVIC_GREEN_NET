@@ -200,28 +200,28 @@ export default function EmailCenterView() {
       ) : (
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-[#24344A] dark:bg-[#0B1628]">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-slate-600 dark:text-slate-300">
+            <table className="min-w-[900px] w-full text-left text-xs text-slate-600 dark:text-slate-300">
               <thead className="border-b border-slate-200 bg-slate-50 uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-900/50">
                 <tr>
-                  <th className="px-5 py-3 font-bold">Logged At</th>
-                  <th className="px-5 py-3 font-bold">Recipient</th>
-                  <th className="px-5 py-3 font-bold">Event Type</th>
-                  <th className="px-5 py-3 font-bold">Subject</th>
-                  <th className="px-5 py-3 font-bold">Status</th>
-                  <th className="px-5 py-3 font-bold text-center">Attempts</th>
-                  <th className="px-5 py-3 font-bold text-right">Action</th>
+                  <th className="px-5 py-3 font-bold whitespace-nowrap">Logged At</th>
+                  <th className="px-5 py-3 font-bold whitespace-nowrap">Recipient</th>
+                  <th className="px-5 py-3 font-bold whitespace-nowrap">Event Type</th>
+                  <th className="px-5 py-3 font-bold whitespace-nowrap">Subject</th>
+                  <th className="px-5 py-3 font-bold whitespace-nowrap">Status</th>
+                  <th className="px-5 py-3 font-bold text-center whitespace-nowrap">Attempts</th>
+                  <th className="px-5 py-3 font-bold text-right whitespace-nowrap pr-6">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {logs.map((log) => (
                   <tr key={log.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
-                    <td className="px-5 py-3.5 text-slate-400 font-mono">
+                    <td className="px-5 py-3.5 text-slate-400 font-mono whitespace-nowrap">
                       {log.created_at ? new Date(log.created_at).toLocaleString() : '—'}
                     </td>
-                    <td className="px-5 py-3.5 font-bold text-slate-800 dark:text-slate-100">
+                    <td className="px-5 py-3.5 font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">
                       {log.recipient}
                     </td>
-                    <td className="px-5 py-3.5">
+                    <td className="px-5 py-3.5 whitespace-nowrap">
                       <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-[10px] font-bold uppercase text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                         {log.event_type || 'NOTIFICATION'}
                       </span>
@@ -229,7 +229,7 @@ export default function EmailCenterView() {
                     <td className="px-5 py-3.5 text-slate-700 dark:text-slate-200 max-w-[200px] truncate">
                       {log.subject || 'Civic GreenNet Alert'}
                     </td>
-                    <td className="px-5 py-3.5">
+                    <td className="px-5 py-3.5 whitespace-nowrap">
                       {log.status === 'sent' ? (
                         <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-bold text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
                           ● Sent
@@ -244,10 +244,10 @@ export default function EmailCenterView() {
                         </span>
                       )}
                     </td>
-                    <td className="px-5 py-3.5 text-center font-mono font-semibold">
+                    <td className="px-5 py-3.5 text-center font-mono font-semibold whitespace-nowrap">
                       {log.attempt_count || 1}
                     </td>
-                    <td className="px-5 py-3.5 text-right">
+                    <td className="px-5 py-3.5 text-right whitespace-nowrap pr-6">
                       <div className="flex items-center justify-end gap-2">
                         <button
                           onClick={() => setSelectedLogModal(log)}

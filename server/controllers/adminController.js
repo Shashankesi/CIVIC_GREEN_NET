@@ -210,9 +210,12 @@ async function deleteDepartment(req, res) {
   }
 }
 
+const resourceRequestService = require('../services/resourceRequestService');
+
 async function listOfficers(req, res) {
   try {
-    const data = await adminDeptService.listOfficers();
+    const departmentId = req.query.departmentId ? parseInt(req.query.departmentId, 10) : null;
+    const data = await adminDeptService.listOfficers({ departmentId });
     return success(res, data);
   } catch (err) {
     return handleServiceError(res, err);
@@ -222,18 +225,20 @@ async function listOfficers(req, res) {
 // ---- Assignment ----
 async function assignComplaint(req, res) {
   try {
-    const complaintId = parseInt(req.body.complaintId, 10);
-    const departmentId = req.body.departmentId ? parseInt(req.body.departmentId, 10) : null;
-    const officerId = req.body.officerId ? parseInt(req.body.officerId, 10) : null;
+    const complaintId = parseInt(req.body.complaintId || req.body.id, 10);
+    const departmentId = req.body.departmentId !== undefined ? (req.body.departmentId ? parseInt(req.body.departmentId, 10) : null) : null;
+    const officerId = req.body.officerId !== undefined ? (req.body.officerId ? parseInt(req.body.officerId, 10) : null) : null;
+    const priority = req.body.priority || null;
 
     const result = await assignmentService.assign({
       complaintId,
       departmentId,
       officerId,
+      priority,
       assignedBy: getUserId(req)
     });
 
-    await auditLogger.log(req, 'complaint_assignment', complaintId, 'complaint', { departmentId, officerId });
+    await auditLogger.log(req, 'complaint_assignment', complaintId, 'complaint', { departmentId, officerId, priority });
     return success(res, result, 'Case assignment updated successfully');
   } catch (err) {
     return handleServiceError(res, err);
@@ -291,17 +296,129 @@ async function getComplaint(req, res) {
 async function updateComplaint(req, res) {
   try {
     const id = parseInt(req.params.id, 10);
+    const hasAssignmentChanges = req.body.department_id !== undefined || req.body.officer_id !== undefined || req.body.departmentId !== undefined || req.body.officerId !== undefined;
+
+    if (hasAssignmentChanges) {
+      const departmentId = req.body.department_id !== undefined ? req.body.department_id : req.body.departmentId;
+      const officerId = req.body.officer_id !== undefined ? req.body.officer_id : req.body.officerId;
+      const priority = req.body.priority || null;
+
+      await assignmentService.assign({
+        complaintId: id,
+        departmentId: departmentId ? parseInt(departmentId, 10) : null,
+        officerId: officerId ? parseInt(officerId, 10) : null,
+        priority: priority || null,
+        assignedBy: getUserId(req)
+      });
+    }
+
     const allowed = ['status', 'priority', 'severity', 'department_id', 'officer_id'];
     const fields = {};
     allowed.forEach((k) => {
       if (req.body[k] !== undefined) fields[k] = req.body[k] || null;
     });
-    // If assigning officer, record timestamp
-    if (fields.officer_id) fields.assigned_at = new Date().toISOString();
-    const data = await adminComplaintRepo.updateComplaintAdmin(id, fields);
+
+    // If explicit non-assigned status transition was requested
+    if (fields.status && fields.status !== 'assigned') {
+      const timelineService = require('../services/timelineService');
+      const comp = await adminComplaintRepo.getComplaintById(id);
+      if (comp && comp.status !== fields.status) {
+        await timelineService.changeStatus(id, fields.status, getUserId(req), req.body.note || 'Status updated by administrator');
+      }
+    }
+
+    const data = await adminComplaintRepo.getComplaintById(id);
     if (!data) return error(res, 'Complaint not found', 404);
     await auditLogger.log(req, 'complaint_update', id, 'complaint', fields);
     return success(res, data, 'Complaint updated');
+  } catch (err) {
+    return handleServiceError(res, err);
+  }
+}
+
+// ---- Resource Requests (Admin) ----
+async function listResourceRequests(req, res) {
+  try {
+    const params = {
+      complaintId: req.query.complaintId ? parseInt(req.query.complaintId, 10) : null,
+      officerId: req.query.officerId ? parseInt(req.query.officerId, 10) : null,
+      departmentId: req.query.departmentId ? parseInt(req.query.departmentId, 10) : null,
+      status: req.query.status || null,
+      page: parseInt(req.query.page, 10) || 1,
+      limit: parseInt(req.query.limit, 10) || 20
+    };
+    const data = await resourceRequestService.listRequests(params);
+    return success(res, data);
+  } catch (err) {
+    return handleServiceError(res, err);
+  }
+}
+
+async function approveResourceRequest(req, res) {
+  try {
+    const requestId = parseInt(req.params.id, 10);
+    const { teamName, leaderId, memberNames, notes } = req.body;
+    const data = await resourceRequestService.approveRequest(requestId, getUserId(req), {
+      teamName,
+      leaderId: leaderId ? parseInt(leaderId, 10) : null,
+      memberNames: memberNames || [],
+      notes
+    });
+    await auditLogger.log(req, 'resource_request_approved', requestId, 'resource_request', { teamName });
+    return success(res, data, 'Resource request approved and team dispatched successfully');
+  } catch (err) {
+    return handleServiceError(res, err);
+  }
+}
+
+async function rejectResourceRequest(req, res) {
+  try {
+    const requestId = parseInt(req.params.id, 10);
+    const { reason } = req.body;
+    const data = await resourceRequestService.rejectRequest(requestId, getUserId(req), { reason });
+    await auditLogger.log(req, 'resource_request_rejected', requestId, 'resource_request', { reason });
+    return success(res, data, 'Resource request declined');
+  } catch (err) {
+    return handleServiceError(res, err);
+  }
+}
+
+// ---- Administrative Resolution Verification ----
+async function verifyComplaintResolution(req, res) {
+  try {
+    const complaintId = parseInt(req.params.id, 10);
+    const { action, note, reason } = req.body; // action: 'verify' | 'reopen' | 'rework'
+    const timelineService = require('../services/timelineService');
+    const pointService = require('../services/pointService');
+
+    const complaint = await adminComplaintRepo.getComplaintById(complaintId);
+    if (!complaint) return error(res, 'Complaint not found', 404);
+
+    if (action === 'verify' || action === 'close') {
+      const updated = await timelineService.changeStatus(complaintId, 'closed', getUserId(req), note || 'Resolution verified and closed by municipal administrator.');
+
+      // Award officer verification bonus points
+      if (complaint.officer_id) {
+        try {
+          await pointService.awardPoints({
+            userId: complaint.officer_id,
+            role: 'officer',
+            complaintId,
+            eventType: 'OFFICER_VERIFIED_RESOLUTION',
+            reason: 'Administrative resolution quality verification passed'
+          });
+        } catch(e) {}
+      }
+
+      await auditLogger.log(req, 'resolution_verified_admin', complaintId, 'complaint', { action: 'closed' });
+      return success(res, updated, 'Complaint resolution verified and case marked closed');
+    } else {
+      // Reopen / request more work
+      const reopenReason = (reason || note || 'Administrator requested additional resolution field work').trim();
+      const updated = await timelineService.changeStatus(complaintId, 'reopened', getUserId(req), `Admin requested rework: ${reopenReason}`);
+      await auditLogger.log(req, 'resolution_reopened_admin', complaintId, 'complaint', { reason: reopenReason });
+      return success(res, updated, 'Complaint reopened and returned to officer for additional work');
+    }
   } catch (err) {
     return handleServiceError(res, err);
   }
@@ -868,5 +985,9 @@ module.exports = {
   verifyDocument,
   rejectDocument,
   testEmail,
-  testOtpEmail
+  testOtpEmail,
+  listResourceRequests,
+  approveResourceRequest,
+  rejectResourceRequest,
+  verifyComplaintResolution
 };

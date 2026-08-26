@@ -51,6 +51,9 @@ router.post('/complaints/:id/status', officerCtl.updateStatus);
 router.post('/complaints/:id/resolve', officerCtl.resolveComplaint);
 router.post('/complaints/:id/notes', officerCtl.addNote);
 router.get('/complaints/:id/notes', officerCtl.getNotes);
+router.post('/complaints/:id/resource-requests', officerCtl.createResourceRequest);
+router.get('/complaints/:id/resource-requests', officerCtl.getResourceRequests);
+router.get('/complaints/:id/team', officerCtl.getComplaintTeam);
 router.post('/ai/chat', officerCtl.aiChat);
 
 module.exports = router;

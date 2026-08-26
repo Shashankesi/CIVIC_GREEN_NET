@@ -1,32 +1,36 @@
 import React, { useState, useEffect, useCallback, useContext } from 'react';
 import { 
   Award, Trophy, Sparkles, TrendingUp, ShieldCheck, CheckCircle2, 
-  Clock, ArrowUpRight, Flame, HelpCircle, Filter, Calendar, Users
+  Clock, ArrowUpRight, Flame, HelpCircle, Filter, Calendar, Users, RefreshCw
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import reputationApi from '../services/reputation';
 import AuthContext from '../context/AuthContext';
 import Skeleton from '../components/Skeleton';
-import PageHeader from '../ui/PageHeader';
+import ErrorState from '../components/ErrorState';
+import AppShell from '../components/AppShell';
 
 export default function CivicImpact() {
   const { user } = useContext(AuthContext);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [reputation, setReputation] = useState(null);
   const [history, setHistory] = useState({ items: [], total: 0, page: 1 });
   const [historyPage, setHistoryPage] = useState(1);
   const [leaderboard, setLeaderboard] = useState({ items: [], total: 0, currentUserRank: null });
   const [timeframe, setTimeframe] = useState('all');
-  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'ledger' | 'leaderboard' | 'badges'
+  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'ledger' | 'leaderboard'
 
   // ── Load User Reputation ───────────────────────────────────────────────────
   const loadReputation = useCallback(async () => {
     try {
       setLoading(true);
+      setError(null);
       const data = await reputationApi.getMyReputation();
       setReputation(data);
     } catch (err) {
       console.error('Failed to load civic reputation:', err);
+      setError(err?.response?.data?.message || 'Could not load your civic reputation profile.');
     } finally {
       setLoading(false);
     }
@@ -36,7 +40,7 @@ export default function CivicImpact() {
   const loadHistory = useCallback(async (page = 1) => {
     try {
       const data = await reputationApi.getMyHistory({ page, limit: 10 });
-      setHistory(data);
+      setHistory(data || { items: [], total: 0, page: 1 });
     } catch (err) {
       console.error('Failed to load history:', err);
     }
@@ -46,7 +50,7 @@ export default function CivicImpact() {
   const loadLeaderboard = useCallback(async () => {
     try {
       const data = await reputationApi.getCitizenLeaderboard({ timeframe, limit: 15 });
-      setLeaderboard(data);
+      setLeaderboard(data || { items: [], total: 0, currentUserRank: null });
     } catch (err) {
       console.error('Failed to load leaderboard:', err);
     }
@@ -54,8 +58,11 @@ export default function CivicImpact() {
 
   useEffect(() => {
     loadReputation();
+  }, [loadReputation]);
+
+  useEffect(() => {
     loadHistory(historyPage);
-  }, [loadReputation, loadHistory, historyPage]);
+  }, [loadHistory, historyPage]);
 
   useEffect(() => {
     loadLeaderboard();
@@ -64,10 +71,40 @@ export default function CivicImpact() {
   const currentLevel = reputation?.currentLevel || { name: 'New Contributor', badgeIcon: '🌱', progressPercent: 0 };
   const nextLevel = reputation?.nextLevel;
 
+  if (loading && !reputation) {
+    return (
+      <AppShell title="Civic Impact & Reputation">
+        <div className="space-y-6">
+          <Skeleton className="h-10 w-64 rounded-xl" />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Skeleton className="h-32 rounded-3xl" />
+            <Skeleton className="h-32 rounded-3xl" />
+            <Skeleton className="h-32 rounded-3xl" />
+            <Skeleton className="h-32 rounded-3xl" />
+          </div>
+          <Skeleton className="h-96 rounded-3xl" />
+        </div>
+      </AppShell>
+    );
+  }
+
+  if (error && !reputation) {
+    return (
+      <AppShell title="Civic Impact & Reputation">
+        <ErrorState
+          title="Unable to load civic reputation"
+          message={error}
+          onRetry={loadReputation}
+        />
+      </AppShell>
+    );
+  }
+
   return (
-    <div className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6 lg:p-8">
-      {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <AppShell title="Civic Impact & Reputation">
+      <div className="space-y-6">
+        {/* ── Header ──────────────────────────────────────────────────────────── */}
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2.5">
             <Award className="h-7 w-7 text-emerald-500" />
@@ -477,5 +514,6 @@ export default function CivicImpact() {
         </div>
       )}
     </div>
-  );
+  </AppShell>
+);
 }

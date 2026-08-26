@@ -229,6 +229,12 @@ async function createComplaint(payload, files = []) {
     logger.warn('Failed to publish real-time COMPLAINT_CREATED event', { err: rtErr.message });
   }
 
+  // Invalidate public aggregate cache
+  try {
+    const { invalidatePublicCache } = require('../controllers/publicController');
+    invalidatePublicCache();
+  } catch (cErr) {}
+
   return complaint;
 }
 
@@ -297,11 +303,21 @@ async function getComplaint(id) {
 }
 
 async function updateComplaint(id, fields) {
-  return complaintRepo.updateComplaint(id, fields);
+  const res = await complaintRepo.updateComplaint(id, fields);
+  try {
+    const { invalidatePublicCache } = require('../controllers/publicController');
+    invalidatePublicCache();
+  } catch (cErr) {}
+  return res;
 }
 
 async function deleteComplaint(id) {
-  return complaintRepo.deleteComplaint(id);
+  const res = await complaintRepo.deleteComplaint(id);
+  try {
+    const { invalidatePublicCache } = require('../controllers/publicController');
+    invalidatePublicCache();
+  } catch (cErr) {}
+  return res;
 }
 
 module.exports = { createComplaint, listComplaints, searchComplaints, getComplaint, updateComplaint, deleteComplaint, enrichComplaintsWithImages };

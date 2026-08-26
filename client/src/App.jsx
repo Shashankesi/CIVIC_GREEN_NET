@@ -91,6 +91,7 @@ export default function App() {
           <Route path="/officer/map" element={withLoader(<ProtectedRoute roles={['officer', 'admin']} redirectTo={homeRoute}><OfficerMap /></ProtectedRoute>)} />
           <Route path="/officer/ai" element={withLoader(<ProtectedRoute roles={['officer', 'admin']} redirectTo={homeRoute}><OfficerAI /></ProtectedRoute>)} />
           <Route path="/officer/profile" element={withLoader(<ProtectedRoute roles={['officer', 'admin']} redirectTo={homeRoute}><OfficerProfile /></ProtectedRoute>)} />
+          <Route path="/officer/complaints/:id" element={withLoader(<ProtectedRoute roles={['officer', 'admin']} redirectTo={homeRoute}><ComplaintView /></ProtectedRoute>)} />
           <Route path="/admin" element={withLoader(<ProtectedRoute roles={['admin']} redirectTo={homeRoute}><AdminPortal /></ProtectedRoute>)} />
           <Route path="/admin/complaints/:id" element={withLoader(<ProtectedRoute roles={['admin']} redirectTo={homeRoute}><AdminPortal /></ProtectedRoute>)} />
           <Route path="/" element={<Navigate to={homeRoute} replace />} />

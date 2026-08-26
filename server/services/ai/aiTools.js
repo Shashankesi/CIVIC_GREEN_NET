@@ -265,16 +265,24 @@ function getCivicGuidelines(category) {
 // ==========================================
 
 async function getOfficerAssignments(officerId, { status = null, limit = 30 } = {}) {
-  const query = `
+  let query = `
     SELECT c.*, d.name AS department_name
     FROM complaints c
     LEFT JOIN departments d ON d.id = c.department_id
     WHERE c.officer_id = $1
-      ${status ? 'AND c.status = $2' : "AND c.status NOT IN ('resolved', 'closed', 'rejected')"}
-    ORDER BY c.created_at ASC
-    LIMIT $${status ? 3 : 2};
   `;
-  const params = status ? [officerId, status, limit] : [officerId, limit];
+  const params = [officerId];
+  let idx = 2;
+
+  if (status && status !== 'all') {
+    query += ` AND c.status = $${idx++}`;
+    params.push(status);
+  } else if (!status) {
+    query += ` AND c.status NOT IN ('resolved', 'closed', 'rejected')`;
+  }
+  query += ` ORDER BY c.created_at ASC LIMIT $${idx++}`;
+  params.push(limit);
+
   const res = await db.query(query, params);
   return res.rows.map(sanitizeComplaint);
 }
@@ -306,16 +314,26 @@ async function getOfficerPriorityCases(officerId) {
   // If officer has 0 assigned cases, check if there are urgent unassigned cases in officer's department
   let unassignedDepartmentCases = [];
   if (scored.length === 0) {
-    const userRes = await db.query('SELECT department_id FROM users WHERE id = $1', [officerId]);
+    const userRes = await db.query(
+      `SELECT u.department_id, d.name AS department_name
+       FROM users u
+       LEFT JOIN departments d ON d.id = u.department_id
+       WHERE u.id = $1`,
+      [officerId]
+    );
     const deptId = userRes.rows[0]?.department_id;
+    const deptName = userRes.rows[0]?.department_name;
     if (deptId) {
+      const complaintRepo = require('../repositories/complaintRepository');
+      const cats = complaintRepo.getCategoriesForDepartment ? complaintRepo.getCategoriesForDepartment(deptName) : [];
       const unassignedRes = await db.query(
         `SELECT c.*, d.name AS department_name
          FROM complaints c
          LEFT JOIN departments d ON d.id = c.department_id
-         WHERE c.department_id = $1 AND c.officer_id IS NULL AND c.status IN ('open', 'reopened')
+         WHERE (c.department_id = $1 OR ($2::text[] IS NOT NULL AND LOWER(c.category) = ANY($2)))
+           AND c.officer_id IS NULL AND c.status IN ('open', 'reopened')
          ORDER BY c.created_at ASC LIMIT 5`,
-        [deptId]
+        [deptId, cats.length ? cats : null]
       );
       unassignedDepartmentCases = unassignedRes.rows.map(calculateComplaintPriority);
       unassignedDepartmentCases.sort((a, b) => b.score - a.score);
@@ -366,17 +384,22 @@ async function getOfficerDepartmentWorkload(officerId) {
     return { message: 'Officer has no assigned department.', departmentName: 'Unassigned' };
   }
 
+  const complaintRepo = require('../repositories/complaintRepository');
+  const cats = complaintRepo.getCategoriesForDepartment ? complaintRepo.getCategoriesForDepartment(dept.department_name) : [];
+
   const statsRes = await db.query(
     `SELECT
        COUNT(*)::int AS total_complaints,
-       COUNT(CASE WHEN status IN ('open', 'assigned', 'in_progress', 'reopened') THEN 1 END)::int AS active_complaints,
-       COUNT(CASE WHEN status = 'open' THEN 1 END)::int AS open_queue,
-       COUNT(CASE WHEN status = 'in_progress' THEN 1 END)::int AS in_progress,
-       COUNT(CASE WHEN status = 'resolved' THEN 1 END)::int AS resolved,
-       COUNT(CASE WHEN sla_due_at < now() AND status NOT IN ('resolved', 'closed', 'rejected') THEN 1 END)::int AS overdue,
-       COUNT(CASE WHEN (priority IN ('high', 'urgent', 'critical') OR severity = 'critical') AND status NOT IN ('resolved', 'closed') THEN 1 END)::int AS critical
-     FROM complaints WHERE department_id = $1`,
-    [dept.department_id]
+       COUNT(CASE WHEN c.status IN ('open', 'assigned', 'in_progress', 'reopened') THEN 1 END)::int AS active_complaints,
+       COUNT(CASE WHEN c.status = 'open' THEN 1 END)::int AS open_queue,
+       COUNT(CASE WHEN c.status = 'in_progress' THEN 1 END)::int AS in_progress,
+       COUNT(CASE WHEN c.status = 'resolved' THEN 1 END)::int AS resolved,
+       COUNT(CASE WHEN c.status = 'closed' THEN 1 END)::int AS closed,
+       COUNT(CASE WHEN c.sla_due_at < now() AND c.status NOT IN ('resolved', 'closed', 'rejected') THEN 1 END)::int AS overdue,
+       COUNT(CASE WHEN (c.priority IN ('high', 'urgent', 'critical') OR c.severity = 'critical') AND c.status NOT IN ('resolved', 'closed', 'rejected') THEN 1 END)::int AS critical
+     FROM complaints c
+     WHERE c.department_id = $1 OR ($2::text[] IS NOT NULL AND LOWER(c.category) = ANY($2))`,
+    [dept.department_id, cats.length ? cats : null]
   );
 
   const stats = statsRes.rows[0] || {};
@@ -509,9 +532,75 @@ async function getOfficerComplaintDetails(officerId, complaintId) {
   const timeline = await complaintRepo.getTimeline(rawId);
   const scored = calculateComplaintPriority(c);
 
+  // Fetch support team and members
+  let supportTeam = null;
+  try {
+    const resourceRequestService = require('../resourceRequestService');
+    supportTeam = await resourceRequestService.getTeamForComplaint(rawId);
+  } catch (e) {}
+
+  // Fetch resource requests
+  let resourceRequests = [];
+  try {
+    const resourceRepo = require('../../repositories/resourceRequestRepository');
+    const rrRes = await resourceRepo.listResourceRequests({ complaintId: rawId });
+    resourceRequests = rrRes.items || [];
+  } catch (e) {}
+
+  // Fetch operational notes count & evidence count
+  const notesRes = await db.query('SELECT COUNT(*)::int AS count FROM complaint_notes WHERE complaint_id = $1', [rawId]);
+  const imagesRes = await db.query('SELECT COUNT(*)::int AS count, COUNT(CASE WHEN (metadata->>\'resolution\') = \'true\' THEN 1 END)::int AS resolution_count FROM complaint_images WHERE complaint_id = $1', [rawId]);
+
+  const notesCount = notesRes.rows[0]?.count || 0;
+  const totalEvidenceCount = imagesRes.rows[0]?.count || 0;
+  const resolutionEvidenceCount = imagesRes.rows[0]?.resolution_count || 0;
+
+  // Resource recommendation logic
+  const isComplex = c.severity === 'critical' || c.severity === 'high' || c.priority === 'critical' || c.priority === 'high';
+  const hasTeam = !!supportTeam;
+  const pendingResourceReq = resourceRequests.find(r => r.status === 'pending');
+
+  let resourceRecommendation = null;
+  if (!hasTeam) {
+    if (isComplex) {
+      resourceRecommendation = 'High-complexity case. Requesting a field support crew of 2-3 specialists is recommended.';
+    } else {
+      resourceRecommendation = 'Standard case complexity. Can typically be handled by primary assigned officer or a 1-person assistant.';
+    }
+  } else {
+    resourceRecommendation = `Assigned support team "${supportTeam.team_name}" (${supportTeam.members?.length || 0} members) is currently actively dispatched.`;
+  }
+
+  // Resolution readiness assessment
+  const canResolve = c.status === 'in_progress' || c.status === 'accepted';
+  const missingEvidence = totalEvidenceCount === 0
+    ? 'No field photographs uploaded yet.'
+    : (c.status === 'in_progress' && resolutionEvidenceCount === 0 ? 'Resolution proof photo not yet marked/uploaded.' : 'Evidence documented.');
+
   return {
     ...scored,
     isAssignedToCaller: isAssigned,
+    supportTeam: supportTeam ? {
+      teamName: supportTeam.team_name,
+      leaderName: supportTeam.leader_name,
+      memberCount: supportTeam.members?.length || 0,
+      members: (supportTeam.members || []).map(m => m.member_name)
+    } : null,
+    resourceRequests: resourceRequests.map(r => ({
+      type: r.request_type,
+      people: r.required_people,
+      status: r.status,
+      reason: r.reason
+    })),
+    resourceRecommendation,
+    resolutionReadiness: {
+      canResolve,
+      currentStatus: c.status,
+      notesCount,
+      totalEvidenceCount,
+      resolutionEvidenceCount,
+      missingEvidence
+    },
     timeline: (timeline.history || []).map(h => ({
       from: h.status_from,
       to: h.status_to,

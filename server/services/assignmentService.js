@@ -12,7 +12,7 @@ class AssignmentError extends Error {
   }
 }
 
-async function assign({ complaintId, departmentId = null, officerId = null, assignedBy }) {
+async function assign({ complaintId, departmentId = null, officerId = null, priority = null, assignedBy }) {
   const complaint = await complaintRepo.getById(complaintId);
   if (!complaint) throw new AssignmentError('Complaint not found', 404);
 
@@ -46,20 +46,34 @@ async function assign({ complaintId, departmentId = null, officerId = null, assi
 
     // 1. Update complaint record
     const updateFields = {};
-    if (departmentId !== undefined && departmentId !== null) updateFields.department_id = parseInt(departmentId, 10);
-    if (officerId !== undefined && officerId !== null) {
-      updateFields.officer_id = parseInt(officerId, 10);
-      updateFields.assigned_at = new Date().toISOString();
-      updateFields.status = 'assigned';
+    if (priority) updateFields.priority = priority;
+    if (departmentId !== undefined) {
+      updateFields.department_id = departmentId ? parseInt(departmentId, 10) : null;
+    }
+    if (officerId !== undefined) {
+      if (officerId) {
+        updateFields.officer_id = parseInt(officerId, 10);
+        updateFields.assigned_at = new Date().toISOString();
+        if (complaint.status === 'open' || complaint.status === 'pending' || complaint.status === 'reopened' || !complaint.status) {
+          updateFields.status = 'assigned';
+        }
+      } else {
+        updateFields.officer_id = null;
+        updateFields.assigned_at = null;
+      }
     }
     await complaintRepo.updateComplaint(complaintId, updateFields);
 
     // 2. Record assignment history & status history
     if (officerId) {
       await assignmentRepo.assignComplaint({ complaintId, officerId: parseInt(officerId, 10), assignedBy });
-      if (complaint.status !== 'assigned') {
-        await complaintRepo.addStatusHistory(complaintId, complaint.status || 'open', 'assigned', assignedBy, 'Complaint assigned to officer.');
+      const currentSt = complaint.status || 'open';
+      const targetSt = updateFields.status || currentSt;
+      if (currentSt !== targetSt) {
+        await complaintRepo.addStatusHistory(complaintId, currentSt, targetSt, assignedBy, `Complaint assigned to officer ${officer?.name || officerId}.`);
       }
+    } else if (previousOfficerId && officerId === null) {
+      await assignmentRepo.unassignComplaint(complaintId, assignedBy);
     }
 
     if (client) await client.query('COMMIT');
@@ -128,13 +142,23 @@ async function assign({ complaintId, departmentId = null, officerId = null, assi
     logger.warn('Real-time assignment event error:', rtErr.message);
   }
 
+  try {
+    const { invalidatePublicCache } = require('../controllers/publicController');
+    invalidatePublicCache();
+  } catch (cErr) {}
+
   return fresh;
 }
 
 async function unassign(complaintId, assignedBy) {
   const complaint = await complaintRepo.getById(complaintId);
   if (!complaint) throw new AssignmentError('Complaint not found', 404);
-  return assignmentRepo.unassignComplaint(complaintId, assignedBy);
+  const res = await assignmentRepo.unassignComplaint(complaintId, assignedBy);
+  try {
+    const { invalidatePublicCache } = require('../controllers/publicController');
+    invalidatePublicCache();
+  } catch (cErr) {}
+  return res;
 }
 
 async function history(complaintId) {

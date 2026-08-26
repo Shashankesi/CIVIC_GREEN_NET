@@ -261,8 +261,6 @@ function BboxTracker({ onBbox, onZoomChange }) {
   return null
 }
 
-// ─── Main MapView Component ──────────────────────────────────────────────────
-
 export default function MapView({
   height = 560,
   initialCenter = [30.7333, 76.7794], // Chandigarh Default
@@ -271,7 +269,13 @@ export default function MapView({
   userRole = 'citizen',
   showAdminDrawer = true,
   onComplaintClick = null,
-  onStatsChange = null
+  onStatsChange = null,
+  complaints: propComplaints = null,
+  preview = false,
+  showLegend = true,
+  showControls = true,
+  showSidebar = true,
+  initialRadius = 10000
 }) {
   const { dark } = useContext(ThemeContext)
   const { user } = useContext(AuthContext)
@@ -284,11 +288,11 @@ export default function MapView({
   const [activeLayers, setActiveLayers] = useState({
     complaints: true,
     heatmap: false,
-    hotspots: true,
+    hotspots: !preview,
     slaRisk: false,
     duplicateClusters: false,
     recurringZones: false,
-    wards: true,
+    wards: !preview,
     departments: false
   })
 
@@ -298,6 +302,13 @@ export default function MapView({
   const [heatmapPoints, setHeatmapPoints] = useState([])
   const [hotspots, setHotspots] = useState([])
   const [slaRiskData, setSlaRiskData] = useState({ overdue: [], dueSoon: [], onTime: [], summary: {} })
+
+  const displayComplaints = useMemo(() => {
+    if (propComplaints && Array.isArray(propComplaints)) {
+      return propComplaints
+    }
+    return complaints
+  }, [propComplaints, complaints])
   const [duplicateClusters, setDuplicateClusters] = useState([])
   const [recurringZones, setRecurringZones] = useState([])
   const [wards, setWards] = useState([])
@@ -353,8 +364,12 @@ export default function MapView({
       const promises = []
 
       // Layer 1: Complaints
-      if (activeLayers.complaints) {
-        promises.push(mapsApi.getComplaintsInBbox(queryParams).then(res => setComplaints(res)))
+      if (activeLayers.complaints && !propComplaints) {
+        promises.push(mapsApi.getComplaintsInBbox(queryParams).then(res => {
+          const list = Array.isArray(res) ? res : []
+          setComplaints(list)
+          if (onStatsChange) onStatsChange(list.length)
+        }))
       }
 
       // Layer 2: Heatmap
@@ -653,7 +668,7 @@ export default function MapView({
         {/* LAYER 4: Complaints Pins / Marker Clustering */}
         {activeLayers.complaints && (
           <MarkerClusterLayer
-            markers={complaints}
+            markers={displayComplaints}
             userLat={userLocation?.lat}
             userLng={userLocation?.lng}
             onSelectComplaint={(c) => {

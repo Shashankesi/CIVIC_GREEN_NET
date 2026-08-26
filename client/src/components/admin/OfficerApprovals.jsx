@@ -226,22 +226,22 @@ export default function OfficerApprovals({
       ) : (
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-[#24344A] dark:bg-[#0B1628]">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-slate-600 dark:text-slate-300">
+            <table className="min-w-[1000px] w-full text-left text-xs text-slate-600 dark:text-slate-300">
               <thead className="border-b border-slate-200 bg-slate-50 uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-900/50">
                 <tr>
-                  <th className="px-5 py-3.5 font-bold">Officer</th>
-                  <th className="px-5 py-3.5 font-bold">Department</th>
-                  <th className="px-5 py-3.5 font-bold">Designation</th>
-                  <th className="px-5 py-3.5 font-bold">Employee ID</th>
-                  <th className="px-5 py-3.5 font-bold">Requested On</th>
-                  <th className="px-5 py-3.5 font-bold">Status</th>
-                  <th className="px-5 py-3.5 font-bold text-right">Actions</th>
+                  <th className="px-5 py-3.5 font-bold whitespace-nowrap">Officer</th>
+                  <th className="px-5 py-3.5 font-bold whitespace-nowrap">Department</th>
+                  <th className="px-5 py-3.5 font-bold whitespace-nowrap">Designation</th>
+                  <th className="px-5 py-3.5 font-bold whitespace-nowrap">Employee ID</th>
+                  <th className="px-5 py-3.5 font-bold whitespace-nowrap">Requested On</th>
+                  <th className="px-5 py-3.5 font-bold whitespace-nowrap">Status</th>
+                  <th className="px-5 py-3.5 font-bold whitespace-nowrap text-right pr-6 min-w-[220px]">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {filteredList.map((officer) => (
                   <tr key={officer.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
-                    <td className="px-5 py-4">
+                    <td className="px-5 py-4 whitespace-nowrap">
                       <div className="flex items-center gap-3">
                         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 font-bold dark:bg-emerald-950/60 dark:text-emerald-400">
                           {officer.name?.charAt(0)?.toUpperCase() || 'O'}
@@ -253,23 +253,23 @@ export default function OfficerApprovals({
                       </div>
                     </td>
 
-                    <td className="px-5 py-4 font-semibold text-slate-700 dark:text-slate-200">
+                    <td className="px-5 py-4 font-semibold text-slate-700 dark:text-slate-200 whitespace-nowrap">
                       {officer.department_name || 'General Municipal Service'}
                     </td>
 
-                    <td className="px-5 py-4 text-slate-500 dark:text-slate-400">
+                    <td className="px-5 py-4 text-slate-500 dark:text-slate-400 whitespace-nowrap">
                       {officer.designation || 'Field Inspector'}
                     </td>
 
-                    <td className="px-5 py-4 font-mono font-bold text-slate-800 dark:text-slate-100">
+                    <td className="px-5 py-4 font-mono font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">
                       {officer.employee_id || <span className="text-slate-400 font-normal">Pending Code</span>}
                     </td>
 
-                    <td className="px-5 py-4 text-slate-400">
+                    <td className="px-5 py-4 text-slate-400 whitespace-nowrap">
                       {officer.created_at ? new Date(officer.created_at).toLocaleDateString() : '—'}
                     </td>
 
-                    <td className="px-5 py-4">
+                    <td className="px-5 py-4 whitespace-nowrap">
                       {officer.status === 'pending' ? (
                         <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-bold text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
                           ● Pending Review
@@ -285,8 +285,8 @@ export default function OfficerApprovals({
                       )}
                     </td>
 
-                    <td className="px-5 py-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
+                    <td className="px-5 py-4 text-right whitespace-nowrap pr-6">
+                      <div className="inline-flex items-center justify-end gap-2 shrink-0">
                         <button
                           onClick={() => setSelectedOfficerModal(officer)}
                           className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"

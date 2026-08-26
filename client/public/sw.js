@@ -44,9 +44,16 @@ self.addEventListener('fetch', (event) => {
   // Network First with Cache Fallback for Navigation
   if (event.request.mode === 'navigate') {
     event.respondWith(
-      fetch(event.request).catch(() => {
-        return caches.match('/index.html') || caches.match('/');
-      })
+      fetch(event.request)
+        .then((response) => {
+          if (!response || response.status === 404) {
+            return caches.match('/index.html').then((cached) => cached || response);
+          }
+          return response;
+        })
+        .catch(() => {
+          return caches.match('/index.html');
+        })
     );
     return;
   }

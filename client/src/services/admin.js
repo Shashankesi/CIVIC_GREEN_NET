@@ -82,16 +82,37 @@ export async function deleteDepartment(id) {
   return unwrapResponse(res)
 }
 
-export async function listOfficers() {
-  const res = await api.get('/admin/departments/officers')
+export async function listOfficers(params = {}) {
+  const res = await api.get('/admin/departments/officers', { params })
+  return unwrapResponse(res)
+}
+
+// ---- Resource Requests & Teams ----
+export async function listResourceRequests(params = {}) {
+  const res = await api.get('/admin/resource-requests', { params })
+  return unwrapResponse(res)
+}
+
+export async function approveResourceRequest(id, payload) {
+  const res = await api.post(`/admin/resource-requests/${id}/approve`, payload)
+  return unwrapResponse(res)
+}
+
+export async function rejectResourceRequest(id, reason) {
+  const res = await api.post(`/admin/resource-requests/${id}/reject`, typeof reason === 'string' ? { reason } : reason)
+  return unwrapResponse(res)
+}
+
+export async function verifyResolutionAdmin(complaintId, payload) {
+  const res = await api.post(`/admin/complaints/${complaintId}/verify`, payload)
   return unwrapResponse(res)
 }
 
 // ---- Assignments ----
-export async function assignComplaint(complaintId, officerId, departmentId = null) {
+export async function assignComplaint(complaintId, officerId, departmentId = null, priority = null) {
   const payload = typeof complaintId === 'object' && complaintId !== null
     ? complaintId
-    : { complaintId, officerId, departmentId }
+    : { complaintId, officerId, departmentId, priority }
   const res = await api.post('/admin/assignments', payload)
   return unwrapResponse(res)
 }
@@ -222,5 +243,9 @@ export default {
   retryEmail,
   getOfficerSummary,
   verifyDocument,
-  rejectDocument
+  rejectDocument,
+  listResourceRequests,
+  approveResourceRequest,
+  rejectResourceRequest,
+  verifyResolutionAdmin
 }

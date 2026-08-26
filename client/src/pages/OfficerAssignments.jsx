@@ -116,11 +116,11 @@ export default function OfficerAssignments() {
       {stats && (
         <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-5">
           <div className="rounded-xl border border-slate-100 bg-white p-4 text-center shadow-sm dark:border-slate-800/80 dark:bg-slate-900">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Queue</div>
-            <div className="mt-1 text-2xl font-black text-slate-800 dark:text-white">{stats.total || 0}</div>
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Assigned to Me</div>
+            <div className="mt-1 text-2xl font-black text-emerald-600 dark:text-emerald-400">{stats.assigned_to_me ?? stats.total ?? 0}</div>
           </div>
           <div className="rounded-xl border border-slate-100 bg-white p-4 text-center shadow-sm dark:border-slate-800/80 dark:bg-slate-900">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Open</div>
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Open Queue</div>
             <div className="mt-1 text-2xl font-black text-blue-600 dark:text-blue-400">{stats.open || 0}</div>
           </div>
           <div className="rounded-xl border border-slate-100 bg-white p-4 text-center shadow-sm dark:border-slate-800/80 dark:bg-slate-900">
@@ -128,12 +128,12 @@ export default function OfficerAssignments() {
             <div className="mt-1 text-2xl font-black text-amber-500 dark:text-amber-400">{stats.in_progress || 0}</div>
           </div>
           <div className="rounded-xl border border-slate-100 bg-white p-4 text-center shadow-sm dark:border-slate-800/80 dark:bg-slate-900">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Resolved</div>
-            <div className="mt-1 text-2xl font-black text-emerald-600 dark:text-emerald-400">{stats.resolved || 0}</div>
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">SLA Due Soon</div>
+            <div className="mt-1 text-2xl font-black text-orange-500 dark:text-orange-400">{stats.due_soon || 0}</div>
           </div>
           <div className="rounded-xl border border-slate-100 bg-white p-4 text-center shadow-sm dark:border-slate-800/80 dark:bg-slate-900">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Rejected</div>
-            <div className="mt-1 text-2xl font-black text-rose-500 dark:text-rose-400">{stats.rejected || 0}</div>
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Resolved</div>
+            <div className="mt-1 text-2xl font-black text-slate-800 dark:text-white">{stats.resolved || 0}</div>
           </div>
         </div>
       )}

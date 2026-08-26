@@ -399,15 +399,15 @@ export default function UserDirectoryView({ onNavigateToOfficer }) {
       ) : (
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-slate-600 dark:text-slate-300">
+            <table className="min-w-[1000px] w-full text-left text-xs text-slate-600 dark:text-slate-300">
               <thead className="border-b border-slate-200 bg-slate-50 uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-800/50">
                 <tr>
-                  <th className="px-5 py-3.5 font-bold">User</th>
-                  <th className="px-5 py-3.5 font-bold">Role</th>
-                  <th className="px-5 py-3.5 font-bold">Account Status</th>
-                  <th className="px-5 py-3.5 font-bold">Professional Details</th>
-                  <th className="px-5 py-3.5 font-bold">Joined</th>
-                  <th className="px-5 py-3.5 font-bold text-right">Actions</th>
+                  <th className="px-5 py-3.5 font-bold whitespace-nowrap">User</th>
+                  <th className="px-5 py-3.5 font-bold whitespace-nowrap">Role</th>
+                  <th className="px-5 py-3.5 font-bold whitespace-nowrap">Account Status</th>
+                  <th className="px-5 py-3.5 font-bold whitespace-nowrap">Professional Details</th>
+                  <th className="px-5 py-3.5 font-bold whitespace-nowrap">Joined</th>
+                  <th className="px-5 py-3.5 font-bold whitespace-nowrap text-right pr-6 min-w-[260px]">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -420,7 +420,7 @@ export default function UserDirectoryView({ onNavigateToOfficer }) {
                   return (
                     <tr key={u.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
                       {/* User Column */}
-                      <td className="px-5 py-3.5">
+                      <td className="px-5 py-3.5 whitespace-nowrap">
                         <div className="flex items-center gap-3">
                           <div className="relative shrink-0">
                             {u.avatar_url ? (
@@ -442,7 +442,7 @@ export default function UserDirectoryView({ onNavigateToOfficer }) {
                       </td>
 
                       {/* Role Column */}
-                      <td className="px-5 py-3.5">
+                      <td className="px-5 py-3.5 whitespace-nowrap">
                         <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-2xs font-extrabold uppercase tracking-wider ${isAdmin ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/40 dark:text-purple-300' : isOfficer ? 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950/40 dark:text-cyan-300' : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'}`}>
                           {isAdmin && <Shield className="h-3 w-3" />}
                           {isOfficer && <UserCheck className="h-3 w-3" />}
@@ -451,7 +451,7 @@ export default function UserDirectoryView({ onNavigateToOfficer }) {
                       </td>
 
                       {/* Status Column */}
-                      <td className="px-5 py-3.5">
+                      <td className="px-5 py-3.5 whitespace-nowrap">
                         <div className="flex flex-col gap-1">
                           <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${isApproved ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300' : u.status === 'pending' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300' : 'bg-rose-100 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300'}`}>
                             ● {u.status || 'active'}
@@ -465,7 +465,7 @@ export default function UserDirectoryView({ onNavigateToOfficer }) {
                       </td>
 
                       {/* Professional Info Column */}
-                      <td className="px-5 py-3.5">
+                      <td className="px-5 py-3.5 whitespace-nowrap">
                         {isOfficer ? (
                           <div>
                             <div className="font-mono font-bold text-slate-800 dark:text-slate-100">{u.employee_id || 'Pending Code'}</div>
@@ -479,30 +479,30 @@ export default function UserDirectoryView({ onNavigateToOfficer }) {
                       </td>
 
                       {/* Joined Date */}
-                      <td className="px-5 py-3.5 text-slate-400 font-mono">
+                      <td className="px-5 py-3.5 text-slate-400 font-mono whitespace-nowrap">
                         {u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}
                       </td>
 
                       {/* Actions Column */}
-                      <td className="px-5 py-3.5 text-right">
-                        <div className="flex items-center justify-end gap-2">
+                      <td className="px-5 py-3.5 text-right whitespace-nowrap pr-6">
+                        <div className="inline-flex items-center justify-end gap-2 shrink-0">
                           <button
                             onClick={() => setSelectedUserDrawer(u)}
-                            className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 transition-colors"
+                            className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 transition-colors shrink-0 whitespace-nowrap"
                           >
                             Details
                           </button>
 
                           <button
                             onClick={() => setRoleModalData({ user: u, targetRole: u.role === 'officer' ? 'citizen' : u.role === 'citizen' ? 'officer' : 'citizen' })}
-                            className="rounded-lg bg-purple-50 border border-purple-200 px-2.5 py-1.5 text-xs font-semibold text-purple-700 hover:bg-purple-100 dark:bg-purple-950/40 dark:border-purple-900/40 dark:text-purple-300 transition-colors"
+                            className="rounded-lg bg-purple-50 border border-purple-200 px-2.5 py-1.5 text-xs font-semibold text-purple-700 hover:bg-purple-100 dark:bg-purple-950/40 dark:border-purple-900/40 dark:text-purple-300 transition-colors shrink-0 whitespace-nowrap"
                           >
                             Change Role
                           </button>
 
                           <button
                             onClick={() => setSuspendModalData({ user: u, newStatus: isApproved ? 'suspended' : 'active' })}
-                            className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold border transition-colors ${isApproved ? 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100 dark:bg-rose-950/40 dark:border-rose-900/40 dark:text-rose-300' : 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:border-emerald-900/40 dark:text-emerald-300'}`}
+                            className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold border transition-colors shrink-0 whitespace-nowrap ${isApproved ? 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100 dark:bg-rose-950/40 dark:border-rose-900/40 dark:text-rose-300' : 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:border-emerald-900/40 dark:text-emerald-300'}`}
                           >
                             {isApproved ? 'Suspend' : 'Reactivate'}
                           </button>

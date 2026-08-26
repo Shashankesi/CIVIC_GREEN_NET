@@ -3,6 +3,7 @@ const logger = require('../utils/logger');
 const { analyzeHotspots } = require('./ai/hotspotAnalyzer');
 const { detectRecurringIssues } = require('./ai/recurringIssueDetector');
 const { getDuplicateClusters } = require('./ai/duplicateClustering');
+const { getCategoryAliases, normalizeStatusFilter } = require('../constants/categories');
 
 /**
  * Helper to build timeframe WHERE clause
@@ -50,13 +51,19 @@ async function getBboxComplaints(minLng, minLat, maxLng, maxLat, {
   ];
 
   if (status && status !== 'all' && status !== 'null' && status !== 'undefined') {
-    params.push(status.toLowerCase());
-    conditions.push(`LOWER(c.status) = $${params.length}`);
+    const matchingStatuses = normalizeStatusFilter(status);
+    if (matchingStatuses && matchingStatuses.length) {
+      params.push(matchingStatuses);
+      conditions.push(`c.status = ANY($${params.length})`);
+    }
   }
 
   if (category && category !== 'all' && category !== 'null' && category !== 'undefined') {
-    params.push(category.toLowerCase());
-    conditions.push(`LOWER(c.category) = $${params.length}`);
+    const catAliases = getCategoryAliases(category);
+    if (catAliases && catAliases.length) {
+      params.push(catAliases);
+      conditions.push(`LOWER(c.category) = ANY($${params.length})`);
+    }
   }
 
   if (priority && priority !== 'all' && priority !== 'null' && priority !== 'undefined') {
@@ -202,12 +209,18 @@ async function getSpatialClusters(minLng, minLat, maxLng, maxLat, zoom = 10, {
   const params = [parseFloat(minLng), parseFloat(minLat), parseFloat(maxLng), parseFloat(maxLat), gridSize];
 
   if (status && status !== 'all' && status !== 'null' && status !== 'undefined') {
-    params.push(status.toLowerCase());
-    conditions.push(`LOWER(c.status) = $${params.length}`);
+    const matchingStatuses = normalizeStatusFilter(status);
+    if (matchingStatuses && matchingStatuses.length) {
+      params.push(matchingStatuses);
+      conditions.push(`c.status = ANY($${params.length})`);
+    }
   }
   if (category && category !== 'all' && category !== 'null' && category !== 'undefined') {
-    params.push(category.toLowerCase());
-    conditions.push(`LOWER(c.category) = $${params.length}`);
+    const catAliases = getCategoryAliases(category);
+    if (catAliases && catAliases.length) {
+      params.push(catAliases);
+      conditions.push(`LOWER(c.category) = ANY($${params.length})`);
+    }
   }
   if (priority && priority !== 'all' && priority !== 'null' && priority !== 'undefined') {
     params.push(priority.toLowerCase());
@@ -262,13 +275,19 @@ async function getHeatmapData(bbox = null, zoom = 10, weightBy = 'density', filt
     }
 
     if (filters.category && filters.category !== 'all' && filters.category !== 'null' && filters.category !== 'undefined') {
-      params.push(filters.category.toLowerCase());
-      conditions.push(`LOWER(c.category) = $${params.length}`);
+      const catAliases = getCategoryAliases(filters.category);
+      if (catAliases && catAliases.length) {
+        params.push(catAliases);
+        conditions.push(`LOWER(c.category) = ANY($${params.length})`);
+      }
     }
 
     if (filters.status && filters.status !== 'all' && filters.status !== 'null' && filters.status !== 'undefined') {
-      params.push(filters.status.toLowerCase());
-      conditions.push(`LOWER(c.status) = $${params.length}`);
+      const matchingStatuses = normalizeStatusFilter(filters.status);
+      if (matchingStatuses && matchingStatuses.length) {
+        params.push(matchingStatuses);
+        conditions.push(`c.status = ANY($${params.length})`);
+      }
     }
 
     const query = `
@@ -639,17 +658,23 @@ async function getNearbyComplaints(lat, lng, radiusMeters = 1000, {
   ];
   const params = [parseFloat(lng), parseFloat(lat), parsedRadius];
 
-  if (category && category !== 'all') {
-    params.push(category.toLowerCase());
-    conditions.push(`LOWER(c.category) = $${params.length}`);
+  if (category && category !== 'all' && category !== 'null' && category !== 'undefined') {
+    const catAliases = getCategoryAliases(category);
+    if (catAliases && catAliases.length) {
+      params.push(catAliases);
+      conditions.push(`LOWER(c.category) = ANY($${params.length})`);
+    }
   }
 
-  if (status && status !== 'all') {
-    params.push(status.toLowerCase());
-    conditions.push(`LOWER(c.status) = $${params.length}`);
+  if (status && status !== 'all' && status !== 'null' && status !== 'undefined') {
+    const matchingStatuses = normalizeStatusFilter(status);
+    if (matchingStatuses && matchingStatuses.length) {
+      params.push(matchingStatuses);
+      conditions.push(`c.status = ANY($${params.length})`);
+    }
   }
 
-  if (priority && priority !== 'all') {
+  if (priority && priority !== 'all' && priority !== 'null' && priority !== 'undefined') {
     params.push(priority.toLowerCase());
     conditions.push(`LOWER(c.priority) = $${params.length}`);
   }

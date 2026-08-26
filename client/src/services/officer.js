@@ -85,8 +85,18 @@ export async function declineAssignment(id, reason) {
   return unwrapResponse(res)
 }
 
-export async function startWork(id) {
-  const res = await api.post(`/officer/complaints/${id}/start-work`)
+export async function createResourceRequest(id, payload) {
+  const res = await api.post(`/officer/complaints/${id}/resource-requests`, payload)
+  return unwrapResponse(res)
+}
+
+export async function getResourceRequests(id) {
+  const res = await api.get(`/officer/complaints/${id}/resource-requests`)
+  return unwrapResponse(res)
+}
+
+export async function getComplaintTeam(id) {
+  const res = await api.get(`/officer/complaints/${id}/team`)
   return unwrapResponse(res)
 }
 
@@ -105,6 +115,9 @@ export default {
   resolveComplaint,
   addNote,
   getNotes,
+  createResourceRequest,
+  getResourceRequests,
+  getComplaintTeam,
   aiChat,
   updateAvailability,
   getActivity,

@@ -163,10 +163,19 @@ const handleHealthCheck = async (req, res) => {
   }
 };
 
+const path = require('path');
+const fs = require('fs');
+
+const clientDist = path.resolve(__dirname, '../client/dist');
+const hasClientBuild = fs.existsSync(path.join(clientDist, 'index.html'));
+
 app.get('/health', handleHealthCheck);
 app.get('/api/health', handleHealthCheck);
 
-app.get('/', (req, res) => {
+app.get('/', (req, res, next) => {
+  if (hasClientBuild) {
+    return res.sendFile(path.join(clientDist, 'index.html'));
+  }
   res.json({
     name: 'Civic GreenNet API',
     status: 'online',
@@ -222,6 +231,14 @@ app.use('/api/auth/forgot', authLimiter);
 // General API rate limiter for resource endpoints
 app.use('/api/', generalLimiter);
 
+// Ensure all dynamic API responses are fresh and never cached stale by browsers or CDNs
+app.use('/api', (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  next();
+});
+
 // ─── 7. API Resource Routes ─────────────────────────────────────────────────
 app.use('/api', publicRoutes);
 app.use('/api/auth', authRoutes);
@@ -237,7 +254,25 @@ app.use('/api/governance', governanceRoutes);
 app.use('/api/realtime', realtimeRoutes);
 app.use('/api/reputation', reputationRoutes);
 
-// ─── 8. Error Handler ───────────────────────────────────────────────────────
+// Explicit 404 for unhandled API routes (never fall through to SPA index.html)
+app.use('/api', (req, res) => {
+  res.status(404).json({ success: false, message: `API endpoint '${req.method} ${req.originalUrl}' not found.` });
+});
+
+// ─── 8. Production Static Assets & SPA Fallback ──────────────────────────────
+if (hasClientBuild) {
+  app.use(express.static(clientDist));
+
+  // SPA fallback for all frontend routes (e.g. /officer, /admin, /impact, /admin/complaints/73)
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/health')) {
+      return next();
+    }
+    res.sendFile(path.join(clientDist, 'index.html'));
+  });
+}
+
+// ─── 9. Error Handler ───────────────────────────────────────────────────────
 app.use(errorHandler);
 
 module.exports = app;

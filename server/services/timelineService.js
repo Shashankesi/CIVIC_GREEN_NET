@@ -301,22 +301,111 @@ async function getTimeline(complaintId) {
     created_at: a.created_at
   }));
 
-  // 4. Resolution Evidence Images
-  const imgQ = `SELECT id,url,public_id,metadata,created_at FROM complaint_images WHERE complaint_id=$1 AND (metadata->>'resolution')='true' ORDER BY created_at ASC`;
+  // 4. Resource Requests & Teams
+  const resourceRes = await db.query(`
+    SELECT rr.id, rr.request_type, rr.required_people, rr.required_skills, rr.priority, rr.reason, rr.status,
+           rr.created_at, uo.name AS requested_by_name
+    FROM resource_requests rr
+    LEFT JOIN users uo ON uo.id = rr.requested_by_officer_id
+    WHERE rr.complaint_id = $1
+    ORDER BY rr.created_at ASC
+  `, [complaintId]);
+
+  const resourceEvents = resourceRes.rows.map(rr => ({
+    id: `resource-${rr.id}`,
+    complaint_id: complaintId,
+    status_from: null,
+    status_to: null,
+    changed_by_name: rr.requested_by_name || 'Officer',
+    changed_by_role: 'officer',
+    action_type: 'RESOURCE_REQUESTED',
+    action_title: `Resource Request: ${rr.request_type} (${rr.required_people} people)`,
+    note: `Reason: ${rr.reason} | Status: ${rr.status}`,
+    created_at: rr.created_at
+  }));
+
+  const teamRes = await db.query(`
+    SELECT ct.id, ct.team_name, ct.notes, ct.status, ct.created_at, ul.name AS leader_name,
+           COUNT(ctm.id)::int AS member_count
+    FROM complaint_teams ct
+    LEFT JOIN users ul ON ul.id = ct.leader_id
+    LEFT JOIN complaint_team_members ctm ON ctm.team_id = ct.id
+    WHERE ct.complaint_id = $1
+    GROUP BY ct.id, ul.name
+    ORDER BY ct.created_at ASC
+  `, [complaintId]);
+
+  const teamEvents = teamRes.rows.map(ct => ({
+    id: `team-${ct.id}`,
+    complaint_id: complaintId,
+    status_from: null,
+    status_to: null,
+    changed_by_name: 'Administrator',
+    changed_by_role: 'admin',
+    action_type: 'TEAM_ASSIGNED',
+    action_title: `Support Team Assigned: ${ct.team_name}`,
+    note: `Leader: ${ct.leader_name || 'Officer'} | ${ct.member_count} team members`,
+    created_at: ct.created_at
+  }));
+
+  // 5. Operational Notes
+  const notesRes = await db.query(`
+    SELECT n.id, n.note, n.is_internal, n.created_at, u.name AS author_name, u.role AS author_role
+    FROM complaint_notes n
+    JOIN users u ON u.id = n.user_id
+    WHERE n.complaint_id = $1
+    ORDER BY n.created_at ASC
+  `, [complaintId]);
+
+  const noteEvents = notesRes.rows.map(n => ({
+    id: `note-${n.id}`,
+    complaint_id: complaintId,
+    status_from: null,
+    status_to: null,
+    changed_by_name: n.author_name,
+    changed_by_role: n.author_role,
+    action_type: 'NOTE_ADDED',
+    action_title: 'Operational Note Logged',
+    note: n.note,
+    created_at: n.created_at
+  }));
+
+  // 6. Evidence Photos
+  const imgQ = `SELECT id,url,public_id,metadata,created_at FROM complaint_images WHERE complaint_id=$1 ORDER BY created_at ASC`;
   const imgs = await db.query(imgQ, [complaintId]);
 
-  // 5. AI Analysis
+  const evidenceEvents = (imgs.rows || []).filter(img => img.metadata?.uploaded_by || img.metadata?.resolution).map(img => ({
+    id: `img-${img.id}`,
+    complaint_id: complaintId,
+    status_from: null,
+    status_to: null,
+    changed_by_name: 'Field Operations',
+    changed_by_role: 'officer',
+    action_type: 'EVIDENCE_UPLOADED',
+    action_title: img.metadata?.resolution ? 'Resolution Proof Uploaded' : 'Field Evidence Uploaded',
+    note: img.metadata?.original_filename ? `File: ${img.metadata.original_filename}` : 'Photo proof attached',
+    created_at: img.created_at
+  }));
+
+  // 7. AI Analysis
   const aiQ = `SELECT id,analysis,confidence,created_at FROM ai_analysis WHERE complaint_id=$1 ORDER BY created_at ASC`;
   const ai = await db.query(aiQ, [complaintId]);
 
   // Merge and sort events by database timestamp
-  const allEvents = [creationEvent, ...assignmentEvents, ...statusEvents].sort(
-    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-  );
+  const allEvents = [
+    creationEvent,
+    ...assignmentEvents,
+    ...statusEvents,
+    ...resourceEvents,
+    ...teamEvents,
+    ...noteEvents,
+    ...evidenceEvents
+  ].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
   return {
     history: allEvents,
-    resolutionImages: imgs.rows,
+    resolutionImages: imgs.rows.filter(img => (img.metadata?.resolution) === true || (img.metadata?.resolution) === 'true'),
+    images: imgs.rows,
     ai: ai.rows
   };
 }

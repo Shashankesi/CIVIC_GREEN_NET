@@ -198,7 +198,7 @@ async function dashboard(req, res) {
 // Officer workload counts (existing compatibility endpoint)
 async function workload(req, res) {
   try {
-    const officerId = req.user.userId;
+    const officerId = getUserId(req);
     const stats = await complaintRepo.getOfficerDashboardStats(officerId);
     return success(res, stats);
   } catch (err) {
@@ -209,28 +209,35 @@ async function workload(req, res) {
 // Assigned complaints queue (existing functionality with enrichments)
 async function assignedComplaints(req, res) {
   try {
-    const officerId = req.user.userId;
+    const officerId = getUserId(req);
     const status = req.query.status || null;
     const page = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 20;
+    const q = req.query.q || null;
 
-    const assigned = await assignmentRepo.complaintsAssignedToOfficer(officerId, { limit: 1000 });
-    const ids = assigned.map((a) => a.id);
-    let items = [];
-    for (const id of ids) {
-      const c = await complaintRepo.getById(id);
-      if (c) items.push(c);
-    }
+    const items = await complaintRepo.searchComplaints({
+      officerId,
+      status: status && status !== 'all' ? status : null,
+      page,
+      limit,
+      q
+    });
+
+    const countConditions = ['c.officer_id = $1'];
+    const countVals = [officerId];
+    let countIdx = 2;
     if (status && status !== 'all') {
-      items = items.filter((c) => c.status === status);
+      countConditions.push(`c.status = $${countIdx++}`);
+      countVals.push(status.toLowerCase().replace('-', '_'));
     }
-    items.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    const countRes = await db.query(
+      `SELECT COUNT(*)::int AS total FROM complaints c WHERE ${countConditions.join(' AND ')}`,
+      countVals
+    );
+    const total = countRes.rows[0]?.total || items.length;
 
-    const total = items.length;
-    const offset = (page - 1) * limit;
-    const sliced = items.slice(offset, offset + limit);
-    await complaintService.enrichComplaintsWithImages(sliced);
-    return success(res, { items: sliced, page, limit, total });
+    await complaintService.enrichComplaintsWithImages(items);
+    return success(res, { items, page, limit, total });
   } catch (err) {
     return handleError(res, err);
   }
@@ -384,6 +391,8 @@ async function updateStatus(req, res) {
   }
 }
 
+const resourceRequestService = require('../services/resourceRequestService');
+
 // Mark complaint resolved
 async function resolveComplaint(req, res) {
   try {
@@ -402,15 +411,68 @@ async function resolveComplaint(req, res) {
       return error(res, 'Forbidden: You are not authorized to resolve this complaint', 403);
     }
 
+    if (!resolutionNote || !resolutionNote.trim()) {
+      return error(res, 'A clear resolution summary note is required to mark the complaint resolved.', 400);
+    }
+
     const timelineService = require('../services/timelineService');
-    const updated = await timelineService.changeStatus(complaintId, 'resolved', officerId, resolutionNote || 'Complaint resolved by officer');
+    const updated = await timelineService.changeStatus(complaintId, 'resolved', officerId, resolutionNote.trim());
+
+    // Save resolution note on complaint table
+    await db.query('UPDATE complaints SET resolution_note = $1 WHERE id = $2', [resolutionNote.trim(), complaintId]);
 
     try {
       const auditLogger = require('../utils/auditLogger');
-      await auditLogger.log(req, 'complaint_resolution', complaintId, 'complaint', { note: resolutionNote });
+      await auditLogger.log(req, 'complaint_resolution', complaintId, 'complaint', { note: resolutionNote.trim() });
     } catch (e) {}
 
     return success(res, updated, 'Complaint marked as resolved');
+  } catch (err) {
+    return handleError(res, err);
+  }
+}
+
+// POST /api/officer/complaints/:id/resource-requests
+async function createResourceRequest(req, res) {
+  try {
+    const complaintId = parseInt(req.params.id, 10);
+    const officerId = req.user.userId;
+    const { requestType, requiredPeople, requiredSkills, equipment, priority, reason } = req.body;
+
+    const data = await resourceRequestService.createRequest({
+      complaintId,
+      officerId,
+      requestType,
+      requiredPeople,
+      requiredSkills,
+      equipment,
+      priority,
+      reason
+    });
+
+    return success(res, data, 'Resource request submitted for administrative review', 201);
+  } catch (err) {
+    return handleError(res, err);
+  }
+}
+
+// GET /api/officer/complaints/:id/resource-requests
+async function getResourceRequests(req, res) {
+  try {
+    const complaintId = parseInt(req.params.id, 10);
+    const data = await resourceRequestService.listRequests({ complaintId });
+    return success(res, data);
+  } catch (err) {
+    return handleError(res, err);
+  }
+}
+
+// GET /api/officer/complaints/:id/team
+async function getComplaintTeam(req, res) {
+  try {
+    const complaintId = parseInt(req.params.id, 10);
+    const data = await resourceRequestService.getTeamForComplaint(complaintId);
+    return success(res, data);
   } catch (err) {
     return handleError(res, err);
   }
@@ -953,5 +1015,8 @@ module.exports = {
   updateAvailability,
   updateProfile,
   getActivity,
-  getPerformance
+  getPerformance,
+  createResourceRequest,
+  getResourceRequests,
+  getComplaintTeam
 };

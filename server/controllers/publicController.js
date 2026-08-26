@@ -1,5 +1,6 @@
 const db = require('../config/db');
 const { success, error } = require('../utils/response');
+const { getCategoryAliases, normalizeCategory, normalizeStatusFilter } = require('../constants/categories');
 
 // Lightweight in-memory cache with TTL for public aggregate endpoints
 const cache = {
@@ -9,7 +10,7 @@ const cache = {
   activity: { data: null, expiresAt: 0 }
 };
 
-const CACHE_TTL_MS = 30 * 1000; // 30 seconds
+const CACHE_TTL_MS = 15 * 1000; // 15 seconds
 
 function getCached(key) {
   const item = cache[key];
@@ -24,6 +25,13 @@ function setCache(key, data, ttlMs = CACHE_TTL_MS) {
     data,
     expiresAt: Date.now() + ttlMs
   };
+}
+
+function invalidatePublicCache() {
+  cache.stats = { data: null, expiresAt: 0 };
+  cache.categories = { data: null, expiresAt: 0 };
+  cache.impact = { data: null, expiresAt: 0 };
+  cache.activity = { data: null, expiresAt: 0 };
 }
 
 // ---- Standard public metadata (existing) ----
@@ -186,6 +194,7 @@ async function getPublicActivity(req, res, next) {
         d.name as department_name
       FROM complaints c
       LEFT JOIN departments d ON d.id = c.department_id
+      WHERE c.status != 'rejected'
       ORDER BY c.created_at DESC
       LIMIT $1
     `;
@@ -250,6 +259,7 @@ async function getPublicRecent(req, res, next) {
           LIMIT 1
         ) as image_url
       FROM complaints c
+      WHERE c.status != 'rejected'
       ORDER BY c.created_at DESC
       LIMIT $1
     `;
@@ -305,18 +315,18 @@ async function getPublicMap(req, res, next) {
     }
 
     if (category && category !== 'all' && category !== 'ALL') {
-      conditions.push(`LOWER(c.category) = LOWER($${idx++})`);
-      vals.push(category);
+      const catAliases = getCategoryAliases(category);
+      if (catAliases && catAliases.length) {
+        conditions.push(`LOWER(c.category) = ANY($${idx++})`);
+        vals.push(catAliases);
+      }
     }
 
     if (status && status !== 'all' && status !== 'ALL') {
-      if (status === 'active') {
-        conditions.push(`c.status IN ('open', 'in_progress', 'reopened', 'pending')`);
-      } else if (status === 'resolved') {
-        conditions.push(`c.status IN ('resolved', 'closed')`);
-      } else {
-        conditions.push(`c.status = $${idx++}`);
-        vals.push(status);
+      const matchingStatuses = normalizeStatusFilter(status);
+      if (matchingStatuses && matchingStatuses.length) {
+        conditions.push(`c.status = ANY($${idx++})`);
+        vals.push(matchingStatuses);
       }
     }
 
@@ -384,28 +394,40 @@ async function getPublicCategories(req, res, next) {
 
     const q = `
       SELECT 
-        COALESCE(NULLIF(category, ''), 'general') as category,
+        COALESCE(NULLIF(category, ''), 'general') as raw_category,
         COUNT(*)::int as count,
         COUNT(*) FILTER (WHERE status IN ('resolved', 'closed'))::int as resolved_count
       FROM complaints
       GROUP BY COALESCE(NULLIF(category, ''), 'general')
       ORDER BY count DESC
-      LIMIT 12
     `;
     const r = await db.query(q);
 
-    const totalCount = r.rows.reduce((sum, row) => sum + (row.count || 0), 0);
-    const items = r.rows.map(row => {
-      const cnt = row.count || 0;
-      const resCnt = row.resolved_count || 0;
-      return {
-        category: row.category,
-        count: cnt,
-        resolvedCount: resCnt,
-        percentage: totalCount > 0 ? Math.round((cnt / totalCount) * 100) : 0,
-        resolvedRate: cnt > 0 ? Math.round((resCnt / cnt) * 100) : 0
-      };
-    });
+    // Normalize categories into canonical buckets
+    const aggregated = {};
+    for (const row of r.rows) {
+      const canonicalKey = normalizeCategory(row.raw_category);
+      if (!aggregated[canonicalKey]) {
+        aggregated[canonicalKey] = {
+          category: canonicalKey,
+          count: 0,
+          resolvedCount: 0
+        };
+      }
+      aggregated[canonicalKey].count += (row.count || 0);
+      aggregated[canonicalKey].resolvedCount += (row.resolved_count || 0);
+    }
+
+    const totalCount = Object.values(aggregated).reduce((sum, item) => sum + item.count, 0);
+    const items = Object.values(aggregated)
+      .sort((a, b) => b.count - a.count)
+      .map(item => ({
+        category: item.category,
+        count: item.count,
+        resolvedCount: item.resolvedCount,
+        percentage: totalCount > 0 ? Math.round((item.count / totalCount) * 100) : 0,
+        resolvedRate: item.count > 0 ? Math.round((item.resolvedCount / item.count) * 100) : 0
+      }));
 
     setCache('categories', items, CACHE_TTL_MS);
     return success(res, items);
@@ -486,5 +508,6 @@ module.exports = {
   getPublicRecent,
   getPublicMap,
   getPublicCategories,
-  getPublicImpact
+  getPublicImpact,
+  invalidatePublicCache
 };

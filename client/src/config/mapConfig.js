@@ -83,7 +83,12 @@ export const PRIORITY_META = {
 
 export const STATUS_OPTIONS = [
   { value: '', label: 'All statuses' },
-  ...Object.keys(STATUS_META).map((k) => ({ value: k, label: STATUS_META[k].label }))
+  { value: 'active', label: 'Active Issues' },
+  { value: 'open', label: 'Open' },
+  { value: 'in_progress', label: 'In Progress' },
+  { value: 'resolved', label: 'Resolved' },
+  { value: 'closed', label: 'Closed' },
+  { value: 'rejected', label: 'Rejected' }
 ]
 
 export const PRIORITY_OPTIONS = [
@@ -93,16 +98,14 @@ export const PRIORITY_OPTIONS = [
 
 export const CATEGORY_OPTIONS = [
   { value: '', label: 'All categories' },
-  { value: 'sanitation',     label: 'Sanitation' },
-  { value: 'roads',          label: 'Roads' },
-  { value: 'water',          label: 'Water' },
-  { value: 'electricity',    label: 'Electricity' },
-  { value: 'public safety',  label: 'Public Safety' },
-  { value: 'waste',          label: 'Waste' },
-  { value: 'parks',          label: 'Parks' },
-  { value: 'drainage',       label: 'Drainage' },
-  { value: 'streetlights',   label: 'Streetlights' },
-  { value: 'other',          label: 'Other' }
+  { value: 'roads',          label: 'Roads & Infrastructure' },
+  { value: 'sanitation',     label: 'Sanitation & Waste' },
+  { value: 'lighting',       label: 'Street Lighting' },
+  { value: 'water',          label: 'Water Supply' },
+  { value: 'drainage',       label: 'Drainage & Sewerage' },
+  { value: 'public_safety',  label: 'Public Safety' },
+  { value: 'parks',          label: 'Parks & Horticulture' },
+  { value: 'other',          label: 'Other Services' }
 ]
 
 export const RADIUS_OPTIONS = [

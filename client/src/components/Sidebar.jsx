@@ -1,5 +1,5 @@
 import React, { useContext, useState, useEffect } from 'react'
-import { NavLink, useNavigate } from 'react-router-dom'
+import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   LayoutDashboard, Ticket, PlusCircle, Bell, Map, LogOut, ChevronsLeft, ChevronsRight,
@@ -96,6 +96,7 @@ function getNavSectionsForRole(role) {
 export default function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile }) {
   const { user, logout } = useContext(AuthContext)
   const navigate = useNavigate()
+  const location = useLocation()
   const [unreadCount, setUnreadCount] = useState(0)
 
   const isOfficer = user?.role === 'officer'
@@ -295,32 +296,36 @@ export default function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onClo
                   key={item.to}
                   to={item.to}
                   onClick={onCloseMobile}
-                  className={({ isActive }) =>
-                    `group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-semibold transition-all ${
-                      item.highlight && !isActive
+                  className={({ isActive }) => {
+                    const isCurrentActive = isActive || (item.to === '/impact' && location.pathname === '/civic-impact');
+                    return `group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-semibold transition-all ${
+                      item.highlight && !isCurrentActive
                         ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 hover:bg-emerald-500/20'
-                        : isActive
+                        : isCurrentActive
                           ? 'bg-emerald-600 text-white dark:bg-emerald-500 shadow-sm font-bold'
                           : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800/60 dark:hover:text-white'
                     } ${collapsed ? 'justify-center px-2' : ''}`
-                  }
+                  }}
                 >
-                  {({ isActive }) => (
-                    <>
-                      <div className="relative flex items-center">
-                        <Icon className={`h-4.5 w-4.5 shrink-0 transition-colors ${isActive ? 'text-white' : item.highlight ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400 dark:text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-200'}`} aria-hidden="true" />
-                        {collapsed && item.badge && unreadCount > 0 && (
-                          <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-rose-500 ring-2 ring-white dark:ring-slate-900" />
+                  {({ isActive }) => {
+                    const isCurrentActive = isActive || (item.to === '/impact' && location.pathname === '/civic-impact');
+                    return (
+                      <>
+                        <div className="relative flex items-center">
+                          <Icon className={`h-4.5 w-4.5 shrink-0 transition-colors ${isCurrentActive ? 'text-white' : item.highlight ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400 dark:text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-200'}`} aria-hidden="true" />
+                          {collapsed && item.badge && unreadCount > 0 && (
+                            <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-rose-500 ring-2 ring-white dark:ring-slate-900" />
+                          )}
+                        </div>
+                        {!collapsed && <span className="truncate">{item.label}</span>}
+                        {!collapsed && item.badge && unreadCount > 0 && (
+                          <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[10px] font-black text-white">
+                            {unreadCount}
+                          </span>
                         )}
-                      </div>
-                      {!collapsed && <span className="truncate">{item.label}</span>}
-                      {!collapsed && item.badge && unreadCount > 0 && (
-                        <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[10px] font-black text-white">
-                          {unreadCount}
-                        </span>
-                      )}
-                    </>
-                  )}
+                      </>
+                    );
+                  }}
                 </NavLink>
               )
             })}

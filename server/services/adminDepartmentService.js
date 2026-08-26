@@ -48,8 +48,8 @@ async function deleteDepartment(id) {
   return true;
 }
 
-async function listOfficers() {
-  return deptRepo.listOfficers();
+async function listOfficers(params = {}) {
+  return deptRepo.listOfficers(params);
 }
 
 module.exports = { listDepartments, getById, createDepartment, updateDepartment, deleteDepartment, listOfficers, DeptError };

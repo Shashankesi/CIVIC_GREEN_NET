@@ -4,16 +4,16 @@ function getCategoriesForDepartment(deptName) {
   if (!deptName) return [];
   const name = deptName.toLowerCase();
   const cats = [];
-  if (name.includes('road')) cats.push('roads');
-  if (name.includes('sanitat') || name.includes('waste')) cats.push('sanitation');
-  if (name.includes('light')) cats.push('lighting');
-  if (name.includes('water')) cats.push('utilities');
-  if (name.includes('sewer') || name.includes('drain')) cats.push('drainage', 'utilities');
-  if (name.includes('park') || name.includes('horticult')) cats.push('parks');
-  if (name.includes('traffic') || name.includes('transport') || name.includes('safety')) cats.push('public_safety', 'roads');
-  if (name.includes('electr')) cats.push('electrical', 'lighting');
+  if (name.includes('road') || name.includes('infrastruct')) cats.push('roads', 'road', 'pothole', 'traffic', 'footpath', 'bridge', 'infrastructure');
+  if (name.includes('sanitat') || name.includes('waste') || name.includes('garbage')) cats.push('sanitation', 'waste', 'garbage', 'debris', 'solid_waste');
+  if (name.includes('light') || name.includes('electr')) cats.push('lighting', 'street_lighting', 'street lighting', 'electrical', 'power');
+  if (name.includes('water')) cats.push('water', 'utilities', 'water_supply', 'water supply', 'leakage', 'pipeline');
+  if (name.includes('sewer') || name.includes('drain')) cats.push('drainage', 'sewerage', 'utilities', 'drain', 'sewer');
+  if (name.includes('park') || name.includes('horticult')) cats.push('parks', 'horticulture', 'environment', 'trees', 'gardens');
+  if (name.includes('traffic') || name.includes('transport') || name.includes('safety')) cats.push('public_safety', 'traffic', 'roads', 'transport');
+  if (name.includes('health')) cats.push('public_health', 'health', 'sanitation');
   cats.push(name);
-  return cats;
+  return [...new Set(cats.map(c => c.toLowerCase()))];
 }
 
 async function createComplaint({ userId, departmentId, title, summary, description, category, priority, severity, isAnonymous, address, location, sla_due_at }) {
@@ -65,8 +65,29 @@ async function updateComplaint(id, fields = {}) {
 }
 
 async function deleteComplaint(id) {
-  const q = 'DELETE FROM complaints WHERE id=$1';
-  await db.query(q, [id]);
+  await db.transaction(async (client) => {
+    await client.query('DELETE FROM complaint_images WHERE complaint_id=$1', [id]);
+    await client.query('DELETE FROM complaint_status_history WHERE complaint_id=$1', [id]);
+    await client.query('DELETE FROM duplicate_complaints WHERE complaint_id=$1', [id]);
+    await client.query('DELETE FROM complaint_notes WHERE complaint_id=$1', [id]);
+    await client.query('DELETE FROM complaint_assignments WHERE complaint_id=$1', [id]);
+    await client.query('DELETE FROM complaint_votes WHERE complaint_id=$1', [id]);
+    await client.query('DELETE FROM complaint_follows WHERE complaint_id=$1', [id]);
+    await client.query('DELETE FROM complaint_comments WHERE complaint_id=$1', [id]);
+    await client.query('DELETE FROM ai_analysis WHERE complaint_id=$1', [id]);
+    await client.query('DELETE FROM ai_audit_logs WHERE complaint_id=$1', [id]);
+    await client.query('DELETE FROM complaint_reopenings WHERE complaint_id=$1', [id]);
+    await client.query('DELETE FROM point_transactions WHERE complaint_id=$1', [id]);
+    await client.query('DELETE FROM resource_requests WHERE complaint_id=$1', [id]);
+    await client.query('DELETE FROM complaint_teams WHERE complaint_id=$1', [id]);
+    await client.query('DELETE FROM email_logs WHERE complaint_id=$1', [id]);
+    await client.query('DELETE FROM complaints WHERE id=$1', [id]);
+  });
+
+  try {
+    const { invalidatePublicCache } = require('../controllers/publicController');
+    invalidatePublicCache();
+  } catch (e) {}
 }
 
 async function findPotentialDuplicates(text, threshold = 0.3, limit = 5) {
@@ -131,35 +152,91 @@ async function monthlyTrend(months = 6, userId = null) {
 }
 
 async function searchComplaints(opts = {}) {
-  const { q = null, userId = null, officerId = null, officerScopeId = null, category = null, departmentId = null, status = null, priority = null, dateFrom = null, dateTo = null, lat = null, lng = null, radius = null, page = 1, limit = 20, sortBy = 'created_at', sortDir = 'desc', assigned = null, dueSoon = null } = opts;
+  const {
+    q = null,
+    userId = null,
+    officerId = null,
+    officerScopeId = null,
+    category = null,
+    departmentId = null,
+    status = null,
+    priority = null,
+    dateFrom = null,
+    dateTo = null,
+    lat = null,
+    lng = null,
+    radius = null,
+    page = 1,
+    limit = 20,
+    sortBy = 'created_at',
+    sortDir = 'desc',
+    assigned = null,
+    dueSoon = null
+  } = opts;
+
   const conditions = [];
   const vals = [];
   let idx = 1;
+
   if (q && String(q).trim()) {
-    const term = String(q).trim();
-    conditions.push(`(title ILIKE $${idx} OR description ILIKE $${idx} OR id::text LIKE $${idx} OR ('CGN-' || lpad(id::text, 5, '0')) ILIKE $${idx})`);
-    vals.push(`%${term}%`);
-    idx++;
+    const rawTerm = String(q).trim();
+    const cleanIdMatch = rawTerm.replace(/^[#\s]+/, '').replace(/^CGN-0*/i, '');
+    const isNumericId = cleanIdMatch && !isNaN(parseInt(cleanIdMatch, 10));
+
+    if (isNumericId) {
+      const parsedId = parseInt(cleanIdMatch, 10);
+      conditions.push(`(
+        c.id = $${idx} OR
+        c.title ILIKE $${idx + 1} OR
+        c.description ILIKE $${idx + 1} OR
+        c.summary ILIKE $${idx + 1} OR
+        c.address ILIKE $${idx + 1} OR
+        c.category ILIKE $${idx + 1} OR
+        u.name ILIKE $${idx + 1} OR
+        d.name ILIKE $${idx + 1} OR
+        o.name ILIKE $${idx + 1} OR
+        ('CGN-' || lpad(c.id::text, 5, '0')) ILIKE $${idx + 1}
+      )`);
+      vals.push(parsedId, `%${rawTerm}%`);
+      idx += 2;
+    } else {
+      conditions.push(`(
+        c.title ILIKE $${idx} OR
+        c.description ILIKE $${idx} OR
+        c.summary ILIKE $${idx} OR
+        c.address ILIKE $${idx} OR
+        c.category ILIKE $${idx} OR
+        u.name ILIKE $${idx} OR
+        d.name ILIKE $${idx} OR
+        o.name ILIKE $${idx} OR
+        c.id::text ILIKE $${idx} OR
+        ('CGN-' || lpad(c.id::text, 5, '0')) ILIKE $${idx}
+      )`);
+      vals.push(`%${rawTerm}%`);
+      idx++;
+    }
   }
+
   if (userId && !isNaN(parseInt(userId, 10))) {
-    conditions.push(`user_id = $${idx++}`);
+    conditions.push(`c.user_id = $${idx++}`);
     vals.push(parseInt(userId, 10));
   }
+
   if (officerId && !isNaN(parseInt(officerId, 10))) {
-    conditions.push(`officer_id = $${idx++}`);
+    conditions.push(`c.officer_id = $${idx++}`);
     vals.push(parseInt(officerId, 10));
   }
-  
+
   if (assigned === 'true' || assigned === true) {
-    conditions.push(`officer_id IS NOT NULL`);
+    conditions.push(`c.officer_id IS NOT NULL`);
   } else if (assigned === 'false' || assigned === false) {
-    conditions.push(`officer_id IS NULL`);
+    conditions.push(`c.officer_id IS NULL`);
   }
-  
+
   if (dueSoon === 'true' || dueSoon === true) {
-    conditions.push(`status NOT IN ('resolved', 'closed', 'rejected') AND sla_due_at IS NOT NULL AND sla_due_at > now() AND sla_due_at <= now() + INTERVAL '24 hours'`);
+    conditions.push(`c.status NOT IN ('resolved', 'closed', 'rejected') AND c.sla_due_at IS NOT NULL AND c.sla_due_at > now() AND c.sla_due_at <= now() + INTERVAL '24 hours'`);
   }
-  
+
   if (officerScopeId) {
     const officerRes = await db.query(`
       SELECT u.department_id, u.settings, u.municipality_id, u.zone_id, u.ward_id, u.jurisdiction,
@@ -175,61 +252,56 @@ async function searchComplaints(opts = {}) {
 
     if (officerRes.rows.length) {
       const u = officerRes.rows[0];
-      const offLat = parseFloat(u.settings?.latitude || u.settings?.lat);
-      const offLng = parseFloat(u.settings?.longitude || u.settings?.lng);
-      const offRadius = parseFloat(u.settings?.radius || u.settings?.radius_km * 1000) || 10000;
+      const settings = typeof u.settings === 'string' ? JSON.parse(u.settings) : (u.settings || {});
+      const offLat = parseFloat(settings.latitude || settings.lat);
+      const offLng = parseFloat(settings.longitude || settings.lng);
+      const offRadius = parseFloat(settings.radius || settings.radius_km * 1000) || 10000;
 
       const isGeneralOfficer = !u.department_id && !u.municipality_id && !u.zone_id && !u.ward_id && !u.jurisdiction && (isNaN(offLat) || isNaN(offLng));
 
       if (!isGeneralOfficer) {
         const scopeConditions = [];
-        
-        // Condition 1: Assigned to them
-        scopeConditions.push(`officer_id = $${idx++}`);
+
+        // Condition 1: Assigned directly to this officer
+        scopeConditions.push(`c.officer_id = $${idx++}`);
         vals.push(officerScopeId);
-        
-        // Condition 2: Matches department (or department name categories)
+
+        // Condition 2: Matches department ID or department categories (case-insensitive)
         if (u.department_id) {
-          scopeConditions.push(`department_id = $${idx++}`);
+          scopeConditions.push(`c.department_id = $${idx++}`);
           vals.push(u.department_id);
 
           const cats = getCategoriesForDepartment(u.department_name);
           if (cats.length) {
-            const catPlaceholders = cats.map(cat => {
-              vals.push(cat);
-              return `$${idx++}`;
-            });
-            scopeConditions.push(`category IN (${catPlaceholders.join(',')})`);
+            scopeConditions.push(`LOWER(c.category) = ANY($${idx++})`);
+            vals.push(cats);
           }
         }
-        
+
         // Condition 3: Matches location radius
         if (!isNaN(offLat) && !isNaN(offLng)) {
-          scopeConditions.push(`ST_DWithin(location::geography, ST_SetSRID(ST_MakePoint($${idx++},$${idx++}),4326)::geography, $${idx++})`);
+          scopeConditions.push(`ST_DWithin(c.location::geography, ST_SetSRID(ST_MakePoint($${idx++},$${idx++}),4326)::geography, $${idx++})`);
           vals.push(offLng, offLat, offRadius);
         }
-        
-        // Condition 4: Fallback to municipality name matches in address text
+
+        // Condition 4: Fallback to municipality / zone / ward / jurisdiction text matches
         if (u.municipality_name) {
-          scopeConditions.push(`address ILIKE $${idx++}`);
+          scopeConditions.push(`c.address ILIKE $${idx++}`);
           vals.push(`%${u.municipality_name}%`);
         }
-        // Condition 5: Fallback to zone name matches in address text
         if (u.zone_name) {
-          scopeConditions.push(`address ILIKE $${idx++}`);
+          scopeConditions.push(`c.address ILIKE $${idx++}`);
           vals.push(`%${u.zone_name}%`);
         }
-        // Condition 6: Fallback to ward name matches in address text
         if (u.ward_name) {
-          scopeConditions.push(`address ILIKE $${idx++}`);
+          scopeConditions.push(`c.address ILIKE $${idx++}`);
           vals.push(`%${u.ward_name}%`);
         }
-        // Condition 7: Fallback to jurisdiction text matches in address text
         if (u.jurisdiction) {
-          scopeConditions.push(`address ILIKE $${idx++}`);
+          scopeConditions.push(`c.address ILIKE $${idx++}`);
           vals.push(`%${u.jurisdiction}%`);
         }
-        
+
         if (scopeConditions.length) {
           conditions.push(`(${scopeConditions.join(' OR ')})`);
         }
@@ -237,61 +309,75 @@ async function searchComplaints(opts = {}) {
     }
   }
 
-  if (category && String(category).trim()) {
-    conditions.push(`category = $${idx++}`);
-    vals.push(String(category).trim());
+  if (category && String(category).trim() && String(category).trim().toLowerCase() !== 'all') {
+    conditions.push(`LOWER(c.category) = $${idx++}`);
+    vals.push(String(category).trim().toLowerCase());
   }
   if (departmentId && !isNaN(parseInt(departmentId, 10))) {
-    conditions.push(`department_id = $${idx++}`);
+    conditions.push(`c.department_id = $${idx++}`);
     vals.push(parseInt(departmentId, 10));
   }
-  if (status && String(status).trim()) {
+  if (status && String(status).trim() && String(status).trim().toLowerCase() !== 'all') {
     const rawStatus = String(status).trim().toLowerCase().replace('-', '_');
-    conditions.push(`status = $${idx++}`);
+    conditions.push(`c.status = $${idx++}`);
     vals.push(rawStatus);
   }
-  if (priority && String(priority).trim()) {
-    conditions.push(`priority = $${idx++}`);
+  if (priority && String(priority).trim() && String(priority).trim().toLowerCase() !== 'all') {
+    conditions.push(`c.priority = $${idx++}`);
     vals.push(String(priority).trim().toLowerCase());
   }
   if (dateFrom && String(dateFrom).trim()) {
-    conditions.push(`created_at >= $${idx++}::timestamp`);
+    conditions.push(`c.created_at >= $${idx++}::timestamp`);
     vals.push(dateFrom);
   }
   if (dateTo && String(dateTo).trim()) {
-    conditions.push(`created_at < ($${idx++}::date + INTERVAL '1 day')`);
+    conditions.push(`c.created_at < ($${idx++}::date + INTERVAL '1 day')`);
     vals.push(dateTo);
   }
   if (lat && lng && radius) {
-    conditions.push(`ST_DWithin(location::geography, ST_SetSRID(ST_MakePoint($${idx++},$${idx++}),4326)::geography, $${idx++})`);
+    conditions.push(`ST_DWithin(c.location::geography, ST_SetSRID(ST_MakePoint($${idx++},$${idx++}),4326)::geography, $${idx++})`);
     vals.push(lng, lat, radius);
   }
+
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const offset = (page - 1) * limit;
-  let order = `ORDER BY ${sortBy} ${sortDir.toUpperCase() === 'ASC' ? 'ASC' : 'DESC'}`;
+  let order = `ORDER BY c.${sortBy} ${sortDir.toUpperCase() === 'ASC' ? 'ASC' : 'DESC'}`;
   if (sortBy === 'priority_val') {
-    order = `ORDER BY CASE WHEN priority = 'critical' THEN 4 WHEN priority = 'high' THEN 3 WHEN priority = 'medium' THEN 2 ELSE 1 END ${sortDir.toUpperCase() === 'ASC' ? 'ASC' : 'DESC'}`;
+    order = `ORDER BY CASE WHEN c.priority = 'critical' THEN 4 WHEN c.priority = 'high' THEN 3 WHEN c.priority = 'medium' THEN 2 ELSE 1 END ${sortDir.toUpperCase() === 'ASC' ? 'ASC' : 'DESC'}`;
   }
+
   const qStr = `
     SELECT
-      id,
-      user_id,
-      department_id,
-      title,
-      summary,
-      description,
-      status,
-      priority,
-      category,
-      created_at,
-      address,
-      ST_X(location::geometry) AS lng,
-      ST_Y(location::geometry) AS lat,
-      officer_id,
-      sla_due_at,
-      resolution_at,
-      is_anonymous
-    FROM complaints
+      c.id,
+      c.external_id,
+      c.user_id,
+      c.department_id,
+      c.title,
+      c.summary,
+      c.description,
+      c.status,
+      c.priority,
+      c.severity,
+      c.category,
+      c.created_at,
+      c.assigned_at,
+      c.address,
+      ST_X(c.location::geometry) AS lng,
+      ST_Y(c.location::geometry) AS lat,
+      c.officer_id,
+      c.sla_due_at,
+      c.resolution_at,
+      c.resolution_note,
+      c.is_anonymous,
+      u.name AS citizen_name,
+      u.email AS citizen_email,
+      d.name AS department_name,
+      o.name AS officer_name,
+      o.email AS officer_email
+    FROM complaints c
+    LEFT JOIN users u ON u.id = c.user_id
+    LEFT JOIN departments d ON d.id = c.department_id
+    LEFT JOIN users o ON o.id = c.officer_id
     ${where}
     ${order}
     LIMIT $${idx++} OFFSET $${idx++}
@@ -424,76 +510,75 @@ async function getOfficerDashboardStats(officerId) {
     LEFT JOIN departments d ON d.id = u.department_id
     WHERE u.id = $1
   `, [officerId]);
-  
+
   let scopeCondition = '1=1';
   const vals = [officerId];
   let idx = 2;
 
   if (officerRes.rows.length) {
     const u = officerRes.rows[0];
-    const offLat = parseFloat(u.settings?.latitude || u.settings?.lat);
-    const offLng = parseFloat(u.settings?.longitude || u.settings?.lng);
-    const offRadius = parseFloat(u.settings?.radius || u.settings?.radius_km * 1000) || 10000;
-    
+    const settings = typeof u.settings === 'string' ? JSON.parse(u.settings) : (u.settings || {});
+    const offLat = parseFloat(settings.latitude || settings.lat);
+    const offLng = parseFloat(settings.longitude || settings.lng);
+    const offRadius = parseFloat(settings.radius || settings.radius_km * 1000) || 10000;
+
     const isGeneralOfficer = !u.department_id && !u.municipality_id && !u.zone_id && !u.ward_id && !u.jurisdiction && (isNaN(offLat) || isNaN(offLng));
 
     if (!isGeneralOfficer) {
-      const scopeConditions = ['officer_id = $1'];
-      
+      const scopeConditions = ['c.officer_id = $1'];
+
       if (u.department_id) {
-        scopeConditions.push(`department_id = $${idx++}`);
+        scopeConditions.push(`c.department_id = $${idx++}`);
         vals.push(u.department_id);
 
         const cats = getCategoriesForDepartment(u.department_name);
         if (cats.length) {
-          const catPlaceholders = cats.map(cat => {
-            vals.push(cat);
-            return `$${idx++}`;
-          });
-          scopeConditions.push(`category IN (${catPlaceholders.join(',')})`);
+          scopeConditions.push(`LOWER(c.category) = ANY($${idx++})`);
+          vals.push(cats);
         }
       }
-      
+
       if (!isNaN(offLat) && !isNaN(offLng)) {
-        scopeConditions.push(`ST_DWithin(location::geography, ST_SetSRID(ST_MakePoint($${idx++},$${idx++}),4326)::geography, $${idx++})`);
+        scopeConditions.push(`ST_DWithin(c.location::geography, ST_SetSRID(ST_MakePoint($${idx++},$${idx++}),4326)::geography, $${idx++})`);
         vals.push(offLng, offLat, offRadius);
       }
-      
+
       if (u.municipality_name) {
-        scopeConditions.push(`address ILIKE $${idx++}`);
+        scopeConditions.push(`c.address ILIKE $${idx++}`);
         vals.push(`%${u.municipality_name}%`);
       }
       if (u.zone_name) {
-        scopeConditions.push(`address ILIKE $${idx++}`);
+        scopeConditions.push(`c.address ILIKE $${idx++}`);
         vals.push(`%${u.zone_name}%`);
       }
       if (u.ward_name) {
-        scopeConditions.push(`address ILIKE $${idx++}`);
+        scopeConditions.push(`c.address ILIKE $${idx++}`);
         vals.push(`%${u.ward_name}%`);
       }
       if (u.jurisdiction) {
-        scopeConditions.push(`address ILIKE $${idx++}`);
+        scopeConditions.push(`c.address ILIKE $${idx++}`);
         vals.push(`%${u.jurisdiction}%`);
       }
-      
+
       scopeCondition = `(${scopeConditions.join(' OR ')})`;
     }
   }
 
   const q = `SELECT
     COUNT(*)::int AS total,
-    COUNT(CASE WHEN officer_id = $1 THEN 1 END)::int AS assigned_to_me,
-    COUNT(CASE WHEN status = 'open' THEN 1 END)::int AS open,
-    COUNT(CASE WHEN status = 'in_progress' OR status = 'reopened' THEN 1 END)::int AS in_progress,
-    COUNT(CASE WHEN priority = 'high' THEN 1 END)::int AS high_priority,
-    COUNT(CASE WHEN priority = 'critical' THEN 1 END)::int AS critical,
-    COUNT(CASE WHEN status = 'resolved' THEN 1 END)::int AS resolved,
-    COUNT(CASE WHEN officer_id IS NULL THEN 1 END)::int AS unassigned,
-    COUNT(CASE WHEN status NOT IN ('resolved', 'closed') AND sla_due_at IS NOT NULL AND sla_due_at > now() AND sla_due_at <= now() + INTERVAL '24 hours' THEN 1 END)::int AS due_soon,
-    COUNT(CASE WHEN status NOT IN ('resolved', 'closed') AND sla_due_at IS NOT NULL AND sla_due_at < now() THEN 1 END)::int AS overdue
-    FROM complaints
+    COUNT(CASE WHEN c.officer_id = $1 THEN 1 END)::int AS assigned_to_me,
+    COUNT(CASE WHEN c.status = 'open' THEN 1 END)::int AS open,
+    COUNT(CASE WHEN c.status IN ('in_progress', 'assigned', 'accepted', 'reopened') THEN 1 END)::int AS in_progress,
+    COUNT(CASE WHEN c.priority = 'high' AND c.status NOT IN ('resolved', 'closed', 'rejected') THEN 1 END)::int AS high_priority,
+    COUNT(CASE WHEN c.priority = 'critical' AND c.status NOT IN ('resolved', 'closed', 'rejected') THEN 1 END)::int AS critical,
+    COUNT(CASE WHEN c.status = 'resolved' THEN 1 END)::int AS resolved,
+    COUNT(CASE WHEN c.status = 'closed' THEN 1 END)::int AS closed,
+    COUNT(CASE WHEN c.officer_id IS NULL AND c.status NOT IN ('resolved', 'closed', 'rejected') THEN 1 END)::int AS unassigned,
+    COUNT(CASE WHEN c.status NOT IN ('resolved', 'closed', 'rejected') AND c.sla_due_at IS NOT NULL AND c.sla_due_at > now() AND c.sla_due_at <= now() + INTERVAL '24 hours' THEN 1 END)::int AS due_soon,
+    COUNT(CASE WHEN c.status NOT IN ('resolved', 'closed', 'rejected') AND c.sla_due_at IS NOT NULL AND c.sla_due_at < now() THEN 1 END)::int AS overdue
+    FROM complaints c
     WHERE ${scopeCondition}`;
-  
+
   const r = await db.query(q, vals);
   return r.rows[0];
 }

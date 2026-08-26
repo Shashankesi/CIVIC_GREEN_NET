@@ -12,23 +12,66 @@ function buildFilters(opts, startIdx = 1) {
   let idx = startIdx;
 
   if (opts.search && String(opts.search).trim()) {
-    const term = String(opts.search).trim();
-    conditions.push(`(c.title ILIKE $${idx} OR c.description ILIKE $${idx} OR c.summary ILIKE $${idx} OR c.address ILIKE $${idx} OR u.name ILIKE $${idx} OR c.id::text ILIKE $${idx} OR ('CGN-' || lpad(c.id::text, 5, '0')) ILIKE $${idx})`);
-    vals.push(`%${term}%`);
-    idx++;
+    const rawTerm = String(opts.search).trim();
+    // Normalize ticket ID formats like #73, CGN-00073, CGN-73, or 73
+    const cleanIdMatch = rawTerm.replace(/^[#\s]+/, '').replace(/^CGN-0*/i, '');
+    const isNumericId = cleanIdMatch && !isNaN(parseInt(cleanIdMatch, 10));
+
+    if (isNumericId) {
+      const parsedId = parseInt(cleanIdMatch, 10);
+      conditions.push(`(
+        c.id = $${idx} OR
+        c.title ILIKE $${idx + 1} OR
+        c.description ILIKE $${idx + 1} OR
+        c.summary ILIKE $${idx + 1} OR
+        c.address ILIKE $${idx + 1} OR
+        c.category ILIKE $${idx + 1} OR
+        u.name ILIKE $${idx + 1} OR
+        u.email ILIKE $${idx + 1} OR
+        d.name ILIKE $${idx + 1} OR
+        o.name ILIKE $${idx + 1} OR
+        ('CGN-' || lpad(c.id::text, 5, '0')) ILIKE $${idx + 1}
+      )`);
+      vals.push(parsedId, `%${rawTerm}%`);
+      idx += 2;
+    } else {
+      conditions.push(`(
+        c.title ILIKE $${idx} OR
+        c.description ILIKE $${idx} OR
+        c.summary ILIKE $${idx} OR
+        c.address ILIKE $${idx} OR
+        c.category ILIKE $${idx} OR
+        u.name ILIKE $${idx} OR
+        u.email ILIKE $${idx} OR
+        d.name ILIKE $${idx} OR
+        o.name ILIKE $${idx} OR
+        c.id::text ILIKE $${idx} OR
+        ('CGN-' || lpad(c.id::text, 5, '0')) ILIKE $${idx}
+      )`);
+      vals.push(`%${rawTerm}%`);
+      idx++;
+    }
   }
   if (opts.status && String(opts.status).trim()) {
     const rawStatus = String(opts.status).trim().toLowerCase().replace('-', '_');
-    conditions.push(`c.status = $${idx++}`);
-    vals.push(rawStatus);
+    if (rawStatus !== 'all') {
+      conditions.push(`c.status = $${idx++}`);
+      vals.push(rawStatus);
+    }
   }
   if (opts.priority && String(opts.priority).trim()) {
-    conditions.push(`c.priority = $${idx++}`);
-    vals.push(String(opts.priority).trim().toLowerCase());
+    const rawPriority = String(opts.priority).trim().toLowerCase();
+    if (rawPriority !== 'all') {
+      conditions.push(`c.priority = $${idx++}`);
+      vals.push(rawPriority);
+    }
   }
   if (opts.category && String(opts.category).trim()) {
-    conditions.push(`c.category = $${idx++}`);
-    vals.push(String(opts.category).trim());
+    const rawCat = String(opts.category).trim();
+    if (rawCat !== 'all') {
+      conditions.push(`c.category = $${idx++}`);
+      vals.push(rawCat);
+    }
   }
   if (opts.departmentId && !isNaN(parseInt(opts.departmentId, 10))) {
     conditions.push(`c.department_id = $${idx++}`);
@@ -156,7 +199,13 @@ async function listComplaints(opts = {}) {
     }
   }
 
-  return { items: r.rows, total, page, limit };
+  return {
+    items: r.rows,
+    total,
+    page,
+    limit,
+    totalPages: Math.ceil(total / limit) || 1
+  };
 }
 
 /**

@@ -191,6 +191,18 @@ export default function ComplaintView() {
   const [showDeclineModal, setShowDeclineModal] = useState(false)
   const [declineReason, setDeclineReason] = useState('')
 
+  // Support Team & Resource Requests State
+  const [supportTeam, setSupportTeam] = useState(null)
+  const [resourceRequests, setResourceRequests] = useState([])
+  const [showResourceModal, setShowResourceModal] = useState(false)
+  const [reqType, setReqType] = useState('TEAM')
+  const [reqPeople, setReqPeople] = useState(2)
+  const [reqSkills, setReqSkills] = useState('')
+  const [reqEquipment, setReqEquipment] = useState('')
+  const [reqPriority, setReqPriority] = useState('medium')
+  const [reqReason, setReqReason] = useState('')
+  const [submittingResourceReq, setSubmittingResourceReq] = useState(false)
+
   // Officer workflow
   const [officerStatus, setOfficerStatus] = useState('')
   const [resolutionFile, setResolutionFile] = useState(null)
@@ -202,6 +214,17 @@ export default function ComplaintView() {
   const [adminPriority, setAdminPriority] = useState('')
   const [adminDeptId, setAdminDeptId] = useState('')
   const [adminOfficerId, setAdminOfficerId] = useState('')
+
+  const fetchTeamAndRequests = useCallback(async () => {
+    try {
+      const [tRes, rRes] = await Promise.all([
+        officerApi.getComplaintTeam(id).catch(() => null),
+        officerApi.getResourceRequests(id).catch(() => [])
+      ]);
+      setSupportTeam(tRes);
+      setResourceRequests(Array.isArray(rRes) ? rRes : (rRes?.items || []));
+    } catch (e) {}
+  }, [id]);
 
   const fetchComplaintDetails = useCallback(async () => {
     try {
@@ -219,13 +242,15 @@ export default function ComplaintView() {
       setAdminPriority(cData.priority || 'medium')
       setAdminDeptId(cData.department_id ? String(cData.department_id) : '')
       setAdminOfficerId(cData.officer_id ? String(cData.officer_id) : '')
+
+      fetchTeamAndRequests();
       return cData
     } catch (err) {
       const errMsg = err?.response?.data?.message || err?.response?.data?.errors?.[0]?.msg || 'Complaint details could not be retrieved.'
       setError(errMsg)
       throw err
     }
-  }, [id])
+  }, [id, fetchTeamAndRequests])
 
   useEffect(() => {
     let mounted = true
@@ -373,6 +398,35 @@ export default function ComplaintView() {
       toast.error(err?.response?.data?.message || 'Failed to decline assignment.')
     } finally {
       setUpdating(false)
+    }
+  }
+
+  async function handleCreateResourceRequest(e) {
+    e.preventDefault()
+    if (!reqReason.trim()) {
+      toast.error('Please provide a justification for this resource request.')
+      return
+    }
+    setSubmittingResourceReq(true)
+    try {
+      await officerApi.createResourceRequest(complaint.id, {
+        requestType: reqType,
+        requiredPeople: parseInt(reqPeople, 10) || 1,
+        requiredSkills: reqSkills ? reqSkills.trim() : null,
+        equipment: reqEquipment ? reqEquipment.trim() : null,
+        priority: reqPriority,
+        reason: reqReason.trim()
+      })
+      toast.success('Resource request submitted for administrative review.')
+      setShowResourceModal(false)
+      setReqReason('')
+      setReqSkills('')
+      setReqEquipment('')
+      fetchTeamAndRequests()
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Failed to submit resource request.')
+    } finally {
+      setSubmittingResourceReq(false)
     }
   }
 
@@ -1232,18 +1286,77 @@ export default function ComplaintView() {
                         </div>
                       </div>
                     ) : (
-                      /* CASE IS IN_PROGRESS / REOPENED: RESOLVE COMPLAINT */
+                      /* CASE IS IN_PROGRESS / REOPENED: RESOLVE COMPLAINT & RESOURCE CONTROLS */
                       <div className="space-y-3">
                         <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 text-xs text-amber-900 dark:text-amber-200 leading-relaxed font-semibold">
                           This assignment is currently in progress. Complete task to resolve it.
                         </div>
+
+                        {/* SUPPORT TEAM SUMMARY */}
+                        {supportTeam && (
+                          <div className="p-3 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 text-xs space-y-1.5">
+                            <div className="flex items-center justify-between font-bold text-indigo-950 dark:text-indigo-200">
+                              <span className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5 text-indigo-600" /> {supportTeam.team_name}</span>
+                              <span className="text-[10px] bg-indigo-200 dark:bg-indigo-900 px-1.5 py-0.2 rounded font-extrabold">Active</span>
+                            </div>
+                            <p className="text-[11px] text-indigo-700 dark:text-indigo-300">
+                              Leader: <strong>{supportTeam.leader_name || 'Assigned Officer'}</strong> · Crew: {supportTeam.members?.length || 0} members
+                            </p>
+                            {supportTeam.members && supportTeam.members.length > 0 && (
+                              <div className="flex flex-wrap gap-1 pt-1">
+                                {supportTeam.members.map((m, idx) => (
+                                  <span key={idx} className="text-[10px] px-2 py-0.5 rounded bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-800 text-slate-700 dark:text-slate-300 font-semibold">
+                                    👤 {m.member_name}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* RESOURCE REQUESTS STATUS */}
+                        {resourceRequests.length > 0 && (
+                          <div className="p-3 rounded-xl bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 text-xs space-y-1.5">
+                            <div className="font-bold text-amber-900 dark:text-amber-200 flex items-center justify-between">
+                              <span>Resource Requests ({resourceRequests.length})</span>
+                            </div>
+                            {resourceRequests.map((r) => (
+                              <div key={r.id} className="text-[11px] flex items-center justify-between border-t border-amber-200/50 pt-1 text-slate-700 dark:text-slate-300">
+                                <span>{r.request_type} ({r.required_people} people)</span>
+                                <span className={`px-1.5 py-0.2 rounded text-[10px] font-extrabold uppercase ${
+                                  r.status === 'approved' ? 'bg-emerald-100 text-emerald-800' :
+                                  r.status === 'rejected' ? 'bg-rose-100 text-rose-800' :
+                                  'bg-amber-200 text-amber-900'
+                                }`}>{r.status}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
                         <Button
                           onClick={() => setShowResolveModal(true)}
                           disabled={updating}
                           className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 text-xs shadow-sm"
                         >
-                          Resolve Complaint
+                          Mark Case Resolved
                         </Button>
+
+                        <div className="grid grid-cols-2 gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => setShowResourceModal(true)}
+                            className="w-full rounded-xl border border-indigo-300 bg-indigo-50/50 hover:bg-indigo-100 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/30 dark:text-indigo-300 font-bold py-2 text-2xs transition-colors text-center"
+                          >
+                            + Request Crew
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setShowEvidenceModal(true)}
+                            className="w-full rounded-xl border border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 font-bold py-2 text-2xs transition-colors text-center"
+                          >
+                            + Add Photos
+                          </button>
+                        </div>
                       </div>
                     )}
 
@@ -1588,6 +1701,108 @@ export default function ComplaintView() {
                         className="flex-1 bg-rose-600 hover:bg-rose-700 text-white font-bold py-2.5 text-xs shadow-sm"
                       >
                         {updating ? 'Declining…' : 'Decline Assignment'}
+                      </Button>
+                    </div>
+                  </form>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* OFFICER REQUEST TEAM / RESOURCES MODAL */}
+          <AnimatePresence>
+            {showResourceModal && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm"
+              >
+                <motion.div
+                  initial={{ scale: 0.95, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0.95, opacity: 0 }}
+                  className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4"
+                >
+                  <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+                    <h3 className="text-base font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                      <Users className="h-5 w-5 text-indigo-600" /> Request Support Team / Resources
+                    </h3>
+                    <button onClick={() => setShowResourceModal(false)} className="text-slate-400 hover:text-slate-600">
+                      <X className="h-5 w-5" />
+                    </button>
+                  </div>
+
+                  <form onSubmit={handleCreateResourceRequest} className="space-y-3.5 text-xs">
+                    <p className="text-slate-600 dark:text-slate-400 font-medium">
+                      Submit a formal request for auxiliary workforce or specialized equipment to resolve this complaint.
+                    </p>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Request Type</label>
+                        <select
+                          value={reqType}
+                          onChange={(e) => setReqType(e.target.value)}
+                          className="w-full rounded-xl border border-slate-300 p-2.5 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                        >
+                          <option value="TEAM">Support Crew</option>
+                          <option value="SPECIALIST">Specialist Officer</option>
+                          <option value="EQUIPMENT">Heavy Equipment</option>
+                          <option value="ESCALATION">Inter-Dept Taskforce</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">People Required</label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="20"
+                          value={reqPeople}
+                          onChange={(e) => setReqPeople(e.target.value)}
+                          className="w-full rounded-xl border border-slate-300 p-2.5 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Required Skills / Roles</label>
+                      <input
+                        type="text"
+                        value={reqSkills}
+                        onChange={(e) => setReqSkills(e.target.value)}
+                        placeholder="e.g. Asphalt paving, drainage excavation"
+                        className="w-full rounded-xl border border-slate-300 p-2.5 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Justification & Scope *</label>
+                      <textarea
+                        value={reqReason}
+                        onChange={(e) => setReqReason(e.target.value)}
+                        placeholder="Explain why extra workforce or specialized tools are necessary..."
+                        rows={3}
+                        required
+                        className="w-full rounded-xl border border-slate-300 p-2.5 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowResourceModal(false)}
+                        className="flex-1 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                      >
+                        Cancel
+                      </button>
+                      <Button
+                        type="submit"
+                        disabled={submittingResourceReq}
+                        className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 text-xs shadow-sm"
+                      >
+                        {submittingResourceReq ? 'Submitting…' : 'Submit Request'}
                       </Button>
                     </div>
                   </form>

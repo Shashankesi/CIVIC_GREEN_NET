@@ -40,6 +40,12 @@ router.post('/assignments/:complaintId/unassign', adminCtl.unassignComplaint);
 router.get('/complaints', adminCtl.listComplaints);
 router.get('/complaints/:id', adminCtl.getComplaint);
 router.patch('/complaints/:id', adminCtl.updateComplaint);
+router.post('/complaints/:id/verify', adminCtl.verifyComplaintResolution);
+
+// Resource Requests & Teams (Admin Operations)
+router.get('/resource-requests', adminCtl.listResourceRequests);
+router.post('/resource-requests/:id/approve', adminCtl.approveResourceRequest);
+router.post('/resource-requests/:id/reject', adminCtl.rejectResourceRequest);
 
 // Audit Logs
 router.get('/audit-logs/export', adminCtl.exportAuditLogs);
