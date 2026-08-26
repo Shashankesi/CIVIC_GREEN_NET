@@ -35,6 +35,11 @@ export async function acceptComplaint(id) {
   return unwrapResponse(res)
 }
 
+export async function startWork(id) {
+  const res = await api.post(`/officer/complaints/${id}/start-work`)
+  return unwrapResponse(res)
+}
+
 export async function updateComplaintStatus(id, data) {
   const res = await api.post(`/officer/complaints/${id}/status`, data)
   return unwrapResponse(res)
