@@ -345,12 +345,31 @@ function AdminCaseWorkspace({ complaintId, onBack, officers: initialOfficers = [
     return () => clearInterval(timer);
   }, [complaintId, fetchTeamAndResources]);
 
-  // Deterministic lowest workload recommendation
+  // Categorize primary department officers vs available cross-department officers
+  const primaryOfficers = useMemo(() => {
+    if (!departmentId) return deptOfficers;
+    return deptOfficers.filter(o => o.isDeptMatch || String(o.department_id) === String(departmentId));
+  }, [deptOfficers, departmentId]);
+
+  const otherOfficers = useMemo(() => {
+    if (!departmentId) return [];
+    return deptOfficers.filter(o => !o.isDeptMatch && String(o.department_id) !== String(departmentId));
+  }, [deptOfficers, departmentId]);
+
+  // Deterministic lowest workload recommendation prioritizing department / category match & availability
   const recommendedOfficer = useMemo(() => {
     if (!deptOfficers || deptOfficers.length === 0) return null;
-    const sorted = [...deptOfficers].sort((a, b) => (a.currentWorkload || a.activeAssignments || 0) - (b.currentWorkload || b.activeAssignments || 0));
+    const sorted = [...deptOfficers].sort((a, b) => {
+      const aMatch = (a.isDeptMatch || String(a.department_id) === String(departmentId)) ? 0 : 1;
+      const bMatch = (b.isDeptMatch || String(b.department_id) === String(departmentId)) ? 0 : 1;
+      if (aMatch !== bMatch) return aMatch - bMatch;
+      const aAvail = (a.availability || 'AVAILABLE').toUpperCase() === 'AVAILABLE' ? 0 : 1;
+      const bAvail = (b.availability || 'AVAILABLE').toUpperCase() === 'AVAILABLE' ? 0 : 1;
+      if (aAvail !== bAvail) return aAvail - bAvail;
+      return (a.currentWorkload || a.activeAssignments || 0) - (b.currentWorkload || b.activeAssignments || 0);
+    });
     return sorted[0];
-  }, [deptOfficers]);
+  }, [deptOfficers, departmentId]);
 
   // Valid next status options map
   const availableNextStatuses = useMemo(() => {
@@ -871,23 +890,45 @@ function AdminCaseWorkspace({ complaintId, onBack, officers: initialOfficers = [
                     </label>
                     <select
                       value={officerId}
-                      onChange={(e) => setOfficerId(e.target.value)}
+                      onChange={(e) => {
+                        const newOffId = e.target.value;
+                        setOfficerId(newOffId);
+                        if (newOffId) {
+                          const selected = deptOfficers.find(o => String(o.id) === String(newOffId));
+                          if (selected && selected.department_id && String(selected.department_id) !== String(departmentId)) {
+                            setDepartmentId(String(selected.department_id));
+                          }
+                        }
+                      }}
                       disabled={loadingOfficers}
                       className="w-full text-xs rounded-xl border border-slate-300 bg-white p-2.5 font-semibold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                     >
                       <option value="">— Select Active Officer —</option>
-                      {deptOfficers.map(o => (
-                        <option key={o.id} value={o.id}>
-                          {o.name} — {o.designation || 'Officer'} ({o.currentWorkload || o.activeAssignments || 0} active, Overdue: {o.overdueCount || 0}, SLA: {o.slaRisk || 'Low'})
-                        </option>
-                      ))}
+                      {primaryOfficers.length > 0 && (
+                        <optgroup label="🎯 Primary Department Officers">
+                          {primaryOfficers.map(o => (
+                            <option key={o.id} value={o.id}>
+                              {o.name} — {o.designation || 'Officer'} ({o.availability || 'AVAILABLE'} · {o.currentWorkload || o.activeAssignments || 0} active, Overdue: {o.overdueCount || 0}, SLA: {o.slaRisk || 'Low'})
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      {otherOfficers.length > 0 && (
+                        <optgroup label="🌐 Available Officers (Cross-Department)">
+                          {otherOfficers.map(o => (
+                            <option key={o.id} value={o.id}>
+                              {o.name} — {o.department_name || 'Municipal Officer'} ({o.availability || 'AVAILABLE'} · {o.currentWorkload || o.activeAssignments || 0} active, SLA: {o.slaRisk || 'Low'})
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
                     </select>
                   </div>
                 </div>
 
-                {departmentId && deptOfficers.length === 0 && !loadingOfficers && (
-                  <p className="text-2xs font-bold text-amber-600 dark:text-amber-400">
-                    ⚠️ No active officers are currently available for this department.
+                {departmentId && primaryOfficers.length === 0 && !loadingOfficers && (
+                  <p className="text-2xs font-medium text-amber-600 dark:text-amber-400">
+                    ℹ️ No dedicated officers assigned to this department yet. You can select any available municipal officer from the list above.
                   </p>
                 )}
 
@@ -1078,16 +1119,38 @@ function AdminCaseWorkspace({ complaintId, onBack, officers: initialOfficers = [
                 </label>
                 <select
                   value={officerId}
-                  onChange={(e) => setOfficerId(e.target.value)}
+                  onChange={(e) => {
+                    const newOffId = e.target.value;
+                    setOfficerId(newOffId);
+                    if (newOffId) {
+                      const selected = deptOfficers.find(o => String(o.id) === String(newOffId));
+                      if (selected && selected.department_id && String(selected.department_id) !== String(departmentId)) {
+                        setDepartmentId(String(selected.department_id));
+                      }
+                    }
+                  }}
                   disabled={loadingOfficers}
                   className="w-full text-xs rounded-lg border border-slate-200 bg-white p-2 font-medium text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
                 >
                   <option value="">— Unassigned —</option>
-                  {deptOfficers.map(o => (
-                    <option key={o.id} value={o.id}>
-                      {o.name} ({o.currentWorkload || 0} active, SLA: {o.slaRisk || 'Low'})
-                    </option>
-                  ))}
+                  {primaryOfficers.length > 0 && (
+                    <optgroup label="Primary Department Officers">
+                      {primaryOfficers.map(o => (
+                        <option key={o.id} value={o.id}>
+                          {o.name} ({o.availability || 'AVAILABLE'} · {o.currentWorkload || 0} active, SLA: {o.slaRisk || 'Low'})
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {otherOfficers.length > 0 && (
+                    <optgroup label="Available Officers (Other Depts)">
+                      {otherOfficers.map(o => (
+                        <option key={o.id} value={o.id}>
+                          {o.name} — {o.department_name || 'Officer'} ({o.availability || 'AVAILABLE'})
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
               </div>
 

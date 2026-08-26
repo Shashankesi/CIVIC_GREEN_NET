@@ -277,10 +277,15 @@ export default function ComplaintView() {
     }
   }, [user])
 
-  // Filter officers based on selected department
-  const filteredOfficers = useMemo(() => {
+  // Primary vs cross-department available officers based on selected department
+  const primaryOfficers = useMemo(() => {
     if (!adminDeptId) return officers
-    return officers.filter(o => String(o.department_id) === String(adminDeptId))
+    return officers.filter(o => o.isDeptMatch || String(o.department_id) === String(adminDeptId))
+  }, [officers, adminDeptId])
+
+  const otherOfficers = useMemo(() => {
+    if (!adminDeptId) return []
+    return officers.filter(o => !o.isDeptMatch && String(o.department_id) !== String(adminDeptId))
   }, [officers, adminDeptId])
 
   // Handle department dropdown change
@@ -1118,13 +1123,37 @@ export default function ComplaintView() {
                       <label className="mb-1 block text-xs font-bold text-slate-700 dark:text-slate-300">Assigned Officer</label>
                       <select
                         value={adminOfficerId}
-                        onChange={(e) => setAdminOfficerId(e.target.value)}
+                        onChange={(e) => {
+                          const newOffId = e.target.value;
+                          setAdminOfficerId(newOffId);
+                          if (newOffId) {
+                            const selected = officers.find(o => String(o.id) === String(newOffId));
+                            if (selected && selected.department_id && String(selected.department_id) !== String(adminDeptId)) {
+                              setAdminDeptId(String(selected.department_id));
+                            }
+                          }
+                        }}
                         className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-xs font-semibold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-emerald-500 shadow-sm"
                       >
                         <option value="">— Unassigned Officer —</option>
-                        {filteredOfficers.map((o) => (
-                          <option key={o.id} value={o.id}>{o.name}</option>
-                        ))}
+                        {primaryOfficers.length > 0 && (
+                          <optgroup label="🎯 Primary Department Officers">
+                            {primaryOfficers.map((o) => (
+                              <option key={o.id} value={o.id}>
+                                {o.name} — {o.designation || 'Officer'} ({o.availability || 'AVAILABLE'} · {o.currentWorkload || 0} active)
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {otherOfficers.length > 0 && (
+                          <optgroup label="🌐 Available Officers (Cross-Department)">
+                            {otherOfficers.map((o) => (
+                              <option key={o.id} value={o.id}>
+                                {o.name} — {o.department_name || 'Officer'} ({o.availability || 'AVAILABLE'})
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
                       </select>
                     </div>
 

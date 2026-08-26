@@ -8,7 +8,7 @@ const officerCopilot = require('../services/ai/officerCopilot');
 const complaintRepo = require('../repositories/complaintRepository');
 
 describe('Civic GreenNet End-to-End Assignment & Resolution Workflow', () => {
-  const testComplaintId = 73;
+  let testComplaintId;
   let deptRoads;
   let targetOfficer;
   let adminUser;
@@ -31,10 +31,20 @@ describe('Civic GreenNet End-to-End Assignment & Resolution Workflow', () => {
         await db.query('UPDATE users SET department_id = $1 WHERE id = $2', [deptRoads.id, targetOfficer.id]);
       }
     }
+
+    // Create a dynamic complaint for testing
+    const compRes = await db.query(
+      `INSERT INTO complaints (title, description, category, priority, status, department_id, created_at)
+       VALUES ('Hazardous road crater', 'Deep pothole on highway', 'roads', 'high', 'open', $1, now()) RETURNING id`,
+      [deptRoads.id]
+    );
+    testComplaintId = compRes.rows[0].id;
   });
 
   afterAll(async () => {
-    // Keep complaint 73 clean
+    if (testComplaintId) {
+      await complaintRepo.deleteComplaint(testComplaintId);
+    }
   });
 
   it('1. Department-specific officer listing & workload metrics', async () => {

@@ -32,15 +32,17 @@ async function recommendRouting({ category, priority = 'medium', severity = 'mod
           u.id, 
           u.name, 
           u.email,
+          u.department_id,
           COALESCE(u.availability, 'AVAILABLE') AS availability,
-          COUNT(CASE WHEN c.status IN ('assigned', 'in_progress', 'open') THEN 1 END)::int AS active_cases,
+          COUNT(CASE WHEN c.status IN ('assigned', 'in_progress', 'open', 'accepted') THEN 1 END)::int AS active_cases,
           COUNT(CASE WHEN c.sla_due_at IS NOT NULL AND c.sla_due_at < now() AND c.status NOT IN ('resolved', 'closed') THEN 1 END)::int AS overdue_cases,
           COUNT(CASE WHEN c.priority IN ('high', 'urgent', 'critical') AND c.status NOT IN ('resolved', 'closed') THEN 1 END)::int AS high_priority_cases
         FROM users u
         LEFT JOIN complaints c ON c.officer_id = u.id
-        WHERE u.role = 'officer' AND (u.department_id = $1 OR u.department_id IS NULL)
-        GROUP BY u.id, u.name, u.email, COALESCE(u.availability, 'AVAILABLE')
+        WHERE u.role = 'officer' AND u.status IN ('active', 'approved')
+        GROUP BY u.id, u.name, u.email, u.department_id, COALESCE(u.availability, 'AVAILABLE')
         ORDER BY 
+          CASE WHEN u.department_id = $1 THEN 0 ELSE 1 END,
           CASE WHEN UPPER(COALESCE(u.availability, 'AVAILABLE')) = 'AVAILABLE' THEN 0 ELSE 1 END,
           active_cases ASC,
           overdue_cases ASC;

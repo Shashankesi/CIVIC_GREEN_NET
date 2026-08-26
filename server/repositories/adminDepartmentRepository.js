@@ -73,15 +73,23 @@ async function deleteDepartment(id) {
   await db.query('DELETE FROM departments WHERE id=$1', [id]);
 }
 
-async function listOfficers({ departmentId = null } = {}) {
+async function listOfficers({ departmentId = null, category = null, strictDepartment = false } = {}) {
   const conditions = ["u.role = 'officer'", "u.status IN ('active', 'approved')"];
   const vals = [];
   let idx = 1;
+  let deptParamIdx = null;
 
-  if (departmentId) {
+  if (departmentId && strictDepartment) {
     conditions.push(`u.department_id = $${idx++}`);
     vals.push(parseInt(departmentId, 10));
+  } else if (departmentId) {
+    deptParamIdx = idx++;
+    vals.push(parseInt(departmentId, 10));
   }
+
+  const orderBy = deptParamIdx
+    ? `(CASE WHEN u.department_id = $${deptParamIdx} THEN 0 ELSE 1 END), (CASE WHEN UPPER(COALESCE(u.availability, 'AVAILABLE')) = 'AVAILABLE' THEN 0 ELSE 1 END), current_workload ASC, u.name ASC`
+    : `(CASE WHEN UPPER(COALESCE(u.availability, 'AVAILABLE')) = 'AVAILABLE' THEN 0 ELSE 1 END), current_workload ASC, u.name ASC`;
 
   const q = `
     SELECT
@@ -91,10 +99,12 @@ async function listOfficers({ departmentId = null } = {}) {
       u.email,
       u.department_id,
       d.name AS department_name,
+      COALESCE(u.availability, 'AVAILABLE') AS availability,
       COALESCE(u.designation, u.settings->>'designation', 'Field Officer') AS designation,
       COALESCE(u.employee_id, u.settings->>'employee_id') AS employee_id,
       u.status,
       true AS active,
+      ${deptParamIdx ? `(u.department_id = $${deptParamIdx})` : 'true'} AS is_dept_match,
       COUNT(CASE WHEN c.status IN ('assigned', 'accepted', 'in_progress', 'reopened') THEN 1 END)::int AS active_assignments,
       COUNT(CASE WHEN c.status IN ('assigned', 'accepted', 'in_progress', 'reopened') THEN 1 END)::int AS current_workload,
       COUNT(CASE WHEN c.status NOT IN ('resolved', 'closed', 'rejected') AND c.sla_due_at < now() THEN 1 END)::int AS overdue_count,
@@ -104,7 +114,7 @@ async function listOfficers({ departmentId = null } = {}) {
     LEFT JOIN complaints c ON c.officer_id = u.id
     WHERE ${conditions.join(' AND ')}
     GROUP BY u.id, d.name
-    ORDER BY current_workload ASC, u.name ASC
+    ORDER BY ${orderBy}
   `;
 
   const r = await db.query(q, vals);
@@ -117,6 +127,8 @@ async function listOfficers({ departmentId = null } = {}) {
     }
     return {
       ...row,
+      availability: row.availability || 'AVAILABLE',
+      isDeptMatch: Boolean(row.is_dept_match),
       currentWorkload: row.current_workload,
       activeAssignments: row.active_assignments,
       overdueCount: row.overdue_count,
