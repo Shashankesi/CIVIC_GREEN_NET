@@ -68,9 +68,9 @@ Open both `.env` files and add your local configuration details (database creden
    ```bash
    npm run dev
    ```
-3. Open your browser and navigate to `http://localhost:5173` to view the platform.
+3. Open your browser and navigate to `civicgreennet.dev` to view the platform.
 
----
+
 
 ## Project Structure
 
