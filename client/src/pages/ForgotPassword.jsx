@@ -24,18 +24,18 @@ export default function ForgotPassword() {
 
   return (
     <AuthLayout
-      title="Reset your password"
-      subtitle="Enter your email and we'll send you a reset link."
+      title="Reset Your Password"
+      subtitle="Enter your email and we'll send you a secure password reset link."
     >
       {sent ? (
-        <div className="rounded-xl border border-brand-200 bg-brand-50 p-6 text-center dark:border-brand-900/40 dark:bg-brand-900/20">
-          <CheckCircle2 className="mx-auto mb-3 h-10 w-10 text-brand-600 dark:text-brand-400" aria-hidden="true" />
-          <h3 className="text-base font-semibold text-slate-900 dark:text-white">Check your inbox</h3>
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 p-6 text-center dark:border-emerald-900/40 dark:bg-emerald-950/20 shadow-xs">
+          <CheckCircle2 className="mx-auto mb-3 h-10 w-10 text-[#138808] dark:text-emerald-400" aria-hidden="true" />
+          <h3 className="text-base font-bold text-slate-900 dark:text-white">Check your inbox</h3>
           <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
             If an account exists for that email, a password reset link has been sent.
           </p>
           <div className="mt-4">
-            <Link to="/login" className="text-sm font-medium text-brand-600 hover:text-brand-700 dark:text-brand-400">
+            <Link to="/login" className="text-sm font-semibold text-[#138808] hover:text-[#0f6f06] dark:text-emerald-400">
               Back to sign in
             </Link>
           </div>
@@ -47,8 +47,9 @@ export default function ForgotPassword() {
               <Input
                 label="Email address"
                 type="email"
-                placeholder="you@example.com"
+                placeholder="name@example.com"
                 autoComplete="email"
+                icon={Mail}
                 error={errors.email?.message}
                 {...register('email', {
                   required: 'Email is required',
@@ -56,12 +57,15 @@ export default function ForgotPassword() {
                 })}
               />
             </div>
-            <Button type="submit" size="lg" className="w-full" loading={isSubmitting}>
+            <Button type="submit" variant="brand" size="lg" className="w-full" loading={isSubmitting}>
               <Mail className="h-4 w-4" aria-hidden="true" />
               Send reset link
             </Button>
           </form>
-          <Link to="/login" className="mt-6 flex items-center justify-center gap-1 text-sm font-medium text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">
+          <Link
+            to="/login"
+            className="mt-6 flex items-center justify-center gap-1.5 text-sm font-medium text-slate-600 hover:text-emerald-700 dark:text-slate-400 dark:hover:text-emerald-400 transition-colors"
+          >
             <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Back to sign in
           </Link>
         </>

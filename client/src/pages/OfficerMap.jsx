@@ -18,7 +18,7 @@ export default function OfficerMap() {
         <FilterPanel filters={filters} setFilters={setFilters} />
       </div>
 
-      <div className="card p-2 overflow-hidden shadow-md">
+      <div className="officer-card p-3 overflow-hidden rounded-2xl shadow-lg">
         <MapView
           height={600}
           filters={filters}

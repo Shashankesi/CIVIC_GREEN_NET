@@ -27,8 +27,17 @@
   --ai: 139 92 246;
 }
 
-html, body, #root {
-  height: 100%;
+html,
+body,
+#root {
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 body {
@@ -455,180 +464,285 @@ a:focus-visible {
 .cgn-progress-sweep {
   animation: cgn-infinite-progress 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }/* ===== ENTERPRISE GOVERNMENT & OFFICER PORTAL STYLES ===== */
-/* Scoped classes for municipal command center and field operations */
+/* Scoped classes for municipal 3D command center and field operations */
 
-/* --- Officer & Admin Sidebar --- */
+/* --- Officer Page 3D Architectural Mint Grid Background --- */
+.officer-page-bg {
+  min-height: 100vh;
+  background-color: #F0FAF5;
+  background-image:
+    radial-gradient(circle at 10% 10%, rgba(0, 143, 76, 0.04) 0%, transparent 40%),
+    radial-gradient(circle at 90% 85%, rgba(6, 182, 212, 0.035) 0%, transparent 45%),
+    linear-gradient(rgba(0, 143, 76, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 143, 76, 0.035) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 48px 48px, 48px 48px;
+}
+.dark .officer-page-bg {
+  background-color: #08111D;
+  background-image:
+    radial-gradient(circle at 10% 10%, rgba(16, 185, 129, 0.06) 0%, transparent 40%),
+    radial-gradient(circle at 90% 85%, rgba(6, 182, 212, 0.05) 0%, transparent 45%),
+    linear-gradient(rgba(52, 211, 153, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(52, 211, 153, 0.035) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 48px 48px, 48px 48px;
+}
+
+/* --- Premium 3D Officer Sidebar (Light-Themed Glassmorphism) --- */
 .officer-sidebar {
-  background: #064e3b;
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-right: 1px solid rgba(226, 232, 240, 0.85);
+  box-shadow: 4px 0 24px -2px rgba(0, 143, 76, 0.04);
 }
 .dark .officer-sidebar {
-  background: #062319;
-  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(11, 21, 34, 0.92);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-right: 1px solid rgba(30, 41, 59, 0.8);
+  box-shadow: 4px 0 24px -2px rgba(0, 0, 0, 0.4);
 }
 
+/* Sidebar Nav Items */
 .officer-nav-active {
-  background: rgba(16, 185, 129, 0.18);
-  color: #ffffff;
-  border-left: 3px solid #10b981;
-  font-weight: 600;
+  background: linear-gradient(90deg, #E8F8F0 0%, #F0FAF5 100%);
+  color: #008F4C;
+  border-left: 3.5px solid #008F4C;
+  font-weight: 700;
+  box-shadow: 0 2px 10px -2px rgba(0, 143, 76, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 .dark .officer-nav-active {
-  background: rgba(16, 185, 129, 0.15);
-  color: #34d399;
-  border-left: 3px solid #34d399;
+  background: linear-gradient(90deg, rgba(16, 185, 129, 0.18) 0%, rgba(16, 185, 129, 0.06) 100%);
+  color: #34D399;
+  border-left: 3.5px solid #34D399;
+  font-weight: 700;
+  box-shadow: 0 2px 10px -2px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .officer-nav-item {
-  color: rgba(255, 255, 255, 0.72);
-  transition: all 0.15s ease;
-  border-left: 3px solid transparent;
+  color: #475569;
+  font-weight: 600;
+  border-left: 3.5px solid transparent;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .officer-nav-item:hover {
-  color: #ffffff;
+  color: #008F4C;
+  background: rgba(0, 143, 76, 0.06);
+  transform: translateX(3px);
+}
+.dark .officer-nav-item {
+  color: #94A3B8;
+}
+.dark .officer-nav-item:hover {
+  color: #F8FAFC;
   background: rgba(255, 255, 255, 0.06);
+  transform: translateX(3px);
 }
 
-/* --- Enterprise Hero Styles --- */
+/* --- Premium 3D Hero Banner --- */
 .officer-hero {
-  background: linear-gradient(135deg, #064e3b 0%, #065f46 60%, #047857 100%);
-  border: 1px solid rgba(16, 185, 129, 0.25);
-  box-shadow: 0 4px 20px -2px rgba(6, 78, 59, 0.25);
+  background: linear-gradient(135deg, #005C30 0%, #008F4C 55%, #0A9968 100%);
+  border-radius: 1.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: 
+    0 16px 36px -8px rgba(0, 92, 48, 0.35),
+    0 4px 12px -2px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  position: relative;
+  overflow: hidden;
 }
 .dark .officer-hero {
-  background: linear-gradient(135deg, #062319 0%, #064e3b 60%, #022c22 100%);
-  border: 1px solid rgba(16, 185, 129, 0.2);
-  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.4);
+  background: linear-gradient(135deg, #042A1A 0%, #02442C 55%, #085B3F 100%);
+  border: 1px solid rgba(16, 185, 129, 0.28);
+  box-shadow: 
+    0 20px 40px -10px rgba(0, 0, 0, 0.6),
+    0 4px 16px -2px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
 }
 
-/* --- Enterprise KPI Cards --- */
+/* Subtle 3D reflective highlight */
+.officer-hero::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 50%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.12) 0%, transparent 100%);
+  pointer-events: none;
+}
+
+/* Tricolour Accent Line */
+.officer-tricolor-bar {
+  height: 3px;
+  width: 100%;
+  background: linear-gradient(90deg, #FF9933 0%, #FFFFFF 50%, #138808 100%);
+}
+
+/* --- Premium 3D Officer Cards --- */
+.officer-card {
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  border-radius: 1.125rem;
+  box-shadow: 
+    0 10px 28px -6px rgba(0, 143, 76, 0.05),
+    0 2px 8px -1px rgba(15, 23, 42, 0.03),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease;
+}
+.dark .officer-card {
+  background: rgba(17, 28, 45, 0.88);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-color: rgba(36, 52, 74, 0.85);
+  box-shadow: 
+    0 12px 32px -6px rgba(0, 0, 0, 0.45),
+    0 2px 8px -1px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.officer-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 
+    0 18px 36px -6px rgba(0, 143, 76, 0.1),
+    0 4px 14px -2px rgba(15, 23, 42, 0.05);
+  border-color: rgba(16, 185, 129, 0.35);
+}
+.dark .officer-card:hover {
+  box-shadow: 
+    0 20px 42px -6px rgba(0, 0, 0, 0.65),
+    0 6px 18px -2px rgba(0, 0, 0, 0.45);
+  border-color: rgba(52, 211, 153, 0.3);
+}
+
+/* --- Premium 3D KPI Cards --- */
 .officer-kpi-card {
-  border-radius: 0.875rem;
-  padding: 1.125rem;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  color: #0f172a;
-  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 1.125rem;
+  padding: 1.25rem;
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  box-shadow: 
+    0 8px 24px -4px rgba(0, 143, 76, 0.05),
+    0 2px 6px -1px rgba(15, 23, 42, 0.03),
+    inset 0 1px 0 rgba(255, 255, 255, 1);
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
 }
 .dark .officer-kpi-card {
-  background: #111C2D;
-  border-color: #24344A;
-  color: #f8fafc;
+  background: rgba(17, 28, 45, 0.9);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-color: rgba(36, 52, 74, 0.85);
+  box-shadow: 
+    0 10px 28px -4px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 .officer-kpi-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.08);
-  border-color: #cbd5e1;
+  transform: translateY(-3px);
+  box-shadow: 
+    0 18px 36px -6px rgba(0, 143, 76, 0.12),
+    0 4px 14px -2px rgba(15, 23, 42, 0.05);
+  border-color: rgba(0, 143, 76, 0.35);
 }
 .dark .officer-kpi-card:hover {
-  box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.35);
-  border-color: #334155;
+  box-shadow: 
+    0 20px 40px -6px rgba(0, 0, 0, 0.65),
+    0 6px 18px -2px rgba(0, 0, 0, 0.45);
+  border-color: rgba(52, 211, 153, 0.35);
 }
 
-.officer-card {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 0.875rem;
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04);
+/* 3D Icon Container for KPI Cards */
+.officer-icon-3d {
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 
+    0 4px 12px -2px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  transition: transform 0.2s ease;
 }
-.dark .officer-card {
-  background: #111C2D;
-  border-color: #24344A;
-  box-shadow: 0 2px 12px -2px rgba(0, 0, 0, 0.25);
+.officer-kpi-card:hover .officer-icon-3d {
+  transform: scale(1.08) rotate(-2deg);
 }
 
+/* --- Premium 3D Quick Action Tiles --- */
 .officer-qa-card {
   display: flex;
   align-items: center;
-  gap: 0.875rem;
-  padding: 0.875rem 1rem;
-  border-radius: 0.75rem;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  transition: all 0.15s ease;
+  gap: 1rem;
+  padding: 1.125rem 1.25rem;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.03), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  text-decoration: none;
 }
 .dark .officer-qa-card {
-  background: #0d1929;
-  border-color: #24344a;
+  background: rgba(17, 28, 45, 0.85);
+  border-color: rgba(36, 52, 74, 0.8);
+  box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 .officer-qa-card:hover {
-  background: #f1f5f9;
-  border-color: #10b981;
-  transform: translateX(2px);
+  transform: translateY(-2px) translateX(2px);
+  box-shadow: 0 12px 28px -4px rgba(0, 143, 76, 0.12);
+  border-color: #008F4C;
 }
 .dark .officer-qa-card:hover {
-  background: #152438;
-  border-color: #34d399;
+  box-shadow: 0 14px 30px -4px rgba(0, 0, 0, 0.5);
+  border-color: #34D399;
 }
 
-/* --- Officer Copilot Button --- */
+.officer-qa-green { background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.18); }
+.officer-qa-green:hover { background: rgba(16, 185, 129, 0.14); border-color: #008F4C; }
+.officer-qa-blue { background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.18); }
+.officer-qa-blue:hover { background: rgba(59, 130, 246, 0.14); border-color: #2563EB; }
+.officer-qa-orange { background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.18); }
+.officer-qa-orange:hover { background: rgba(245, 158, 11, 0.14); border-color: #D97706; }
+.officer-qa-purple { background: rgba(139, 92, 246, 0.08); border: 1px solid rgba(139, 92, 246, 0.18); }
+.officer-qa-purple:hover { background: rgba(139, 92, 246, 0.14); border-color: #7C3AED; }
+
+.dark .officer-qa-green { background: rgba(16, 185, 129, 0.08); border-color: rgba(16, 185, 129, 0.16); }
+.dark .officer-qa-green:hover { background: rgba(16, 185, 129, 0.16); border-color: #34D399; }
+.dark .officer-qa-blue { background: rgba(59, 130, 246, 0.08); border-color: rgba(59, 130, 246, 0.16); }
+.dark .officer-qa-blue:hover { background: rgba(59, 130, 246, 0.16); border-color: #60A5FA; }
+.dark .officer-qa-orange { background: rgba(245, 158, 11, 0.08); border-color: rgba(245, 158, 11, 0.16); }
+.dark .officer-qa-orange:hover { background: rgba(245, 158, 11, 0.16); border-color: #FBBF24; }
+.dark .officer-qa-purple { background: rgba(139, 92, 246, 0.08); border-color: rgba(139, 92, 246, 0.16); }
+.dark .officer-qa-purple:hover { background: rgba(139, 92, 246, 0.16); border-color: #A78BFA; }
+
+/* --- 3D Officer Floating Copilot Button --- */
 .officer-copilot-btn {
-  background: linear-gradient(135deg, #059669 0%, #10b981 50%, #06b6d4 100%);
-  box-shadow: 0 4px 20px rgba(16, 185, 129, 0.3), 0 0 40px rgba(6, 182, 212, 0.1);
-  transition: all 0.25s ease;
+  background: linear-gradient(135deg, #008F4C 0%, #059669 45%, #06B6D4 100%);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 
+    0 10px 30px -4px rgba(0, 143, 76, 0.45),
+    0 0 40px rgba(6, 182, 212, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .officer-copilot-btn:hover {
-  box-shadow: 0 8px 30px rgba(16, 185, 129, 0.4), 0 0 60px rgba(6, 182, 212, 0.15);
-  transform: translateY(-2px) scale(1.02);
+  box-shadow: 
+    0 16px 40px -4px rgba(0, 143, 76, 0.55),
+    0 0 60px rgba(6, 182, 212, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  transform: translateY(-3px) scale(1.03);
 }
 
 /* --- Officer SLA Ring --- */
 .officer-sla-ring {
-  filter: drop-shadow(0 2px 6px rgba(16, 185, 129, 0.2));
+  filter: drop-shadow(0 4px 10px rgba(0, 143, 76, 0.25));
 }
-
-/* --- Officer Card Base --- */
-.officer-card {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 1rem;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-  transition: box-shadow 0.2s ease, transform 0.2s ease;
-}
-.dark .officer-card {
-  background: #111C2D;
-  border-color: #24344A;
-  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.3);
-}
-.officer-card:hover {
-  box-shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.08);
-}
-.dark .officer-card:hover {
-  box-shadow: 0 8px 28px -4px rgba(0, 0, 0, 0.35);
-}
-
-/* --- Officer Quick Action Cards --- */
-.officer-qa-card {
-  border-radius: 0.875rem;
-  padding: 1rem 1.25rem;
-  transition: all 0.2s ease;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 0.875rem;
-  text-decoration: none;
-}
-.officer-qa-card:hover {
-  transform: translateY(-1px);
-}
-.officer-qa-green { background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.15); }
-.officer-qa-green:hover { background: rgba(16, 185, 129, 0.14); border-color: rgba(16, 185, 129, 0.25); }
-.officer-qa-blue { background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.15); }
-.officer-qa-blue:hover { background: rgba(59, 130, 246, 0.14); border-color: rgba(59, 130, 246, 0.25); }
-.officer-qa-orange { background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.15); }
-.officer-qa-orange:hover { background: rgba(245, 158, 11, 0.14); border-color: rgba(245, 158, 11, 0.25); }
-.officer-qa-purple { background: rgba(139, 92, 246, 0.08); border: 1px solid rgba(139, 92, 246, 0.15); }
-.officer-qa-purple:hover { background: rgba(139, 92, 246, 0.14); border-color: rgba(139, 92, 246, 0.25); }
-
-.dark .officer-qa-green { background: rgba(16, 185, 129, 0.06); border-color: rgba(16, 185, 129, 0.12); }
-.dark .officer-qa-green:hover { background: rgba(16, 185, 129, 0.12); border-color: rgba(16, 185, 129, 0.2); }
-.dark .officer-qa-blue { background: rgba(59, 130, 246, 0.06); border-color: rgba(59, 130, 246, 0.12); }
-.dark .officer-qa-blue:hover { background: rgba(59, 130, 246, 0.12); border-color: rgba(59, 130, 246, 0.2); }
-.dark .officer-qa-orange { background: rgba(245, 158, 11, 0.06); border-color: rgba(245, 158, 11, 0.12); }
-.dark .officer-qa-orange:hover { background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.2); }
 .dark .officer-qa-purple { background: rgba(139, 92, 246, 0.06); border-color: rgba(139, 92, 246, 0.12); }
 .dark .officer-qa-purple:hover { background: rgba(139, 92, 246, 0.12); border-color: rgba(139, 92, 246, 0.2); }
 
@@ -693,4 +807,49 @@ a:focus-visible {
     object-fit: cover;
     object-position: center top;
   }
+}
+
+
+/* ===== CivicGreenNet Auth Page Design System ===== */
+.auth-page {
+  min-height: 100vh;
+  height: auto;
+  overflow-x: hidden;
+  overflow-y: visible;
+  background-color: #f3f8f5;
+  background-image:
+    linear-gradient(rgba(0, 128, 64, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 128, 64, 0.035) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+.dark .auth-page {
+  background-color: #07111f;
+  background-image:
+    linear-gradient(rgba(52, 211, 153, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(52, 211, 153, 0.035) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+.auth-panel-mint {
+  background-color: #f1f7f4;
+  background-image:
+    linear-gradient(rgba(0, 128, 64, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 128, 64, 0.04) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+.dark .auth-panel-mint {
+  background-color: #0a1724;
+  background-image:
+    linear-gradient(rgba(52, 211, 153, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(52, 211, 153, 0.035) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+
+.auth-form-container {
+  min-height: 100vh;
+  height: auto;
+  overflow: visible;
 }

@@ -13,7 +13,7 @@ export default function OfficerHero({ profile, getGreeting, updatingAvailability
   const isOffline = profile.availability === 'OFFLINE'
 
   return (
-    <div className="officer-hero rounded-2xl p-5 sm:p-6 text-white relative">
+    <div className="officer-hero rounded-2xl p-5 sm:p-6 text-white relative shadow-xl overflow-hidden">
       <div className="relative z-10 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
         {/* Left: Officer Identity */}
         <div className="flex items-start sm:items-center gap-4">
@@ -21,30 +21,30 @@ export default function OfficerHero({ profile, getGreeting, updatingAvailability
             <img
               src={profile.avatar_url}
               alt={profile.name || 'Officer'}
-              className="h-14 w-14 sm:h-16 sm:w-16 rounded-xl object-cover ring-2 ring-white/20 shadow-md shrink-0"
+              className="h-14 w-14 sm:h-16 sm:w-16 rounded-xl object-cover ring-2 ring-white/30 shadow-lg shrink-0"
             />
           ) : (
-            <div className="flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-xl bg-white/15 backdrop-blur-sm text-white font-black text-xl ring-2 ring-white/20 shadow-md shrink-0">
+            <div className="flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-xl bg-white/20 backdrop-blur-md text-white font-black text-xl ring-2 ring-white/30 shadow-lg shrink-0">
               {profile.name?.charAt(0).toUpperCase() || <User className="h-7 w-7" />}
             </div>
           )}
 
           <div className="space-y-1">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+              <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight drop-shadow-sm">
                 {getGreeting()}, {profile.name?.split(' ')[0] || 'Officer'}
               </h2>
-              <span className="inline-flex items-center gap-1 rounded-full bg-white/15 backdrop-blur-sm px-2.5 py-0.5 text-[10px] font-bold text-emerald-200 border border-white/20">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 backdrop-blur-md px-3 py-0.5 text-[10px] font-bold text-emerald-100 border border-white/25 shadow-sm">
                 <ShieldCheck className="h-3 w-3 text-emerald-300" />
                 Verified Field Officer
               </span>
             </div>
 
-            <p className="text-xs sm:text-sm text-white/90 font-medium">
+            <p className="text-xs sm:text-sm text-white/95 font-medium">
               {profile.designation || 'Municipal Officer'} • <span className="text-white font-bold">{profile.department?.name || 'Municipal Operations'}</span>
             </p>
 
-            <div className="text-[11px] text-white/70 font-medium flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            <div className="text-[11px] text-white/80 font-medium flex flex-wrap items-center gap-x-2 gap-y-0.5">
               <span className="flex items-center gap-1">
                 <MapPin className="h-3 w-3 text-emerald-300 shrink-0" />
                 <span>{profile.municipality?.name || 'Municipal Corporation'}</span>
@@ -57,19 +57,19 @@ export default function OfficerHero({ profile, getGreeting, updatingAvailability
 
         {/* Right: Employee ID & Availability Controls */}
         <div className="flex flex-wrap items-center gap-3 self-start lg:self-center">
-          <div className="bg-black/20 backdrop-blur-sm border border-white/15 px-4 py-2.5 rounded-xl text-left min-w-[130px]">
-            <span className="block text-[9px] font-extrabold uppercase tracking-wider text-white/60">Employee ID</span>
+          <div className="bg-black/25 backdrop-blur-md border border-white/20 px-4 py-2.5 rounded-xl text-left min-w-[130px] shadow-sm">
+            <span className="block text-[9px] font-extrabold uppercase tracking-wider text-white/70">Employee ID</span>
             <span className="text-xs font-mono font-bold text-white tracking-wider">{profile.employee_id || 'CGN-OFFICER'}</span>
           </div>
 
-          <div className="bg-black/20 backdrop-blur-sm border border-white/15 px-4 py-2 rounded-xl min-w-[150px]">
-            <span className="block text-[9px] font-extrabold uppercase tracking-wider text-white/60 mb-1">Operational Status</span>
+          <div className="bg-black/25 backdrop-blur-md border border-white/20 px-4 py-2 rounded-xl min-w-[150px] shadow-sm">
+            <span className="block text-[9px] font-extrabold uppercase tracking-wider text-white/70 mb-1">Operational Status</span>
             <div className="relative">
               <select
                 value={profile.availability || 'AVAILABLE'}
                 disabled={updatingAvailability}
                 onChange={(e) => onAvailabilityChange(e.target.value)}
-                className={`w-full rounded-lg border border-white/25 px-2.5 py-1 text-xs font-bold text-white bg-white/10 backdrop-blur-sm focus:outline-none focus:border-emerald-300 appearance-none cursor-pointer ${
+                className={`w-full rounded-lg border border-white/30 px-2.5 py-1 text-xs font-bold text-white bg-white/15 backdrop-blur-sm focus:outline-none focus:border-white appearance-none cursor-pointer ${
                   updatingAvailability ? 'opacity-50 cursor-not-allowed' : ''
                 }`}
                 style={{ colorScheme: 'dark' }}
@@ -86,6 +86,9 @@ export default function OfficerHero({ profile, getGreeting, updatingAvailability
           </div>
         </div>
       </div>
+
+      {/* Subtle bottom tricolour accent line */}
+      <div className="officer-tricolor-bar absolute bottom-0 left-0 right-0 opacity-80" />
     </div>
   )
 }

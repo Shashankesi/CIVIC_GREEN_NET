@@ -195,9 +195,9 @@ export default function OfficerProfile() {
         {!loading && !error && profile && (
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
             
-            {/* Left side: Navigation tabs */}
-            <div className="card p-4 space-y-1.5 lg:col-span-1 bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-xl">
-              <div className="flex flex-col items-center pb-4 mb-4 border-b dark:border-slate-800 text-center">
+            {/* Left side: Navigation tabs (3D Command Center Style) */}
+            <div className="officer-card p-4 space-y-1.5 lg:col-span-1 rounded-xl">
+              <div className="flex flex-col items-center pb-4 mb-4 border-b border-slate-200/80 dark:border-slate-800 text-center">
                 {avatarPreview ? (
                   <img src={avatarPreview} alt="Avatar" className="h-20 w-20 rounded-full object-cover border-2 border-emerald-500 shadow-sm" />
                 ) : (
@@ -221,7 +221,7 @@ export default function OfficerProfile() {
                     onClick={() => setActiveTab(tab.id)}
                     className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-xl transition-all ${
                       isActive
-                        ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400'
+                        ? 'officer-nav-active'
                         : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-850 dark:hover:text-slate-200'
                     }`}
                   >
@@ -233,7 +233,7 @@ export default function OfficerProfile() {
             </div>
 
             {/* Right side: Tab Content Pane */}
-            <div className="lg:col-span-3 card p-6 bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-xl min-h-[480px]">
+            <div className="lg:col-span-3 officer-card p-6 rounded-xl min-h-[480px]">
               
               {/* Tab 1: Overview */}
               {activeTab === 'overview' && (

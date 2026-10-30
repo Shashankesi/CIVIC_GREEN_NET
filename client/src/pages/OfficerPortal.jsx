@@ -205,12 +205,12 @@ export default function OfficerPortal() {
               Loader2Icon={Loader2}
             />
 
-            {/* ========== ATTENTION REQUIRED ========== */}
+            {/* ========== ATTENTION REQUIRED (3D Alert System) ========== */}
             <div className="space-y-2">
               <h3 className="text-[10px] font-black uppercase tracking-wider text-slate-400">Attention Required</h3>
               {slaAlerts.length === 0 ? (
-                <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50/30 px-4 py-3 text-xs text-emerald-850 dark:border-emerald-950/25 dark:bg-emerald-950/15 dark:text-emerald-400 shadow-sm">
-                  <CheckCircle2 className="h-4.5 w-4.5 text-emerald-600 dark:text-emerald-500 shrink-0" />
+                <div className="flex items-center gap-2.5 rounded-xl border border-emerald-500/20 bg-emerald-500/8 px-4 py-3 text-xs text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-950/20 dark:text-emerald-300 shadow-xs backdrop-blur-sm">
+                  <CheckCircle2 className="h-4.5 w-4.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
                   <span className="font-semibold">✓ You are fully up to date. No pending overdue assignments or critical SLA warnings detected.</span>
                 </div>
               ) : (
@@ -218,12 +218,16 @@ export default function OfficerPortal() {
                   {slaAlerts.map((alert, idx) => {
                     const Icon = alert.icon
                     return (
-                      <Link key={idx} to={alert.link} className={`flex items-center justify-between gap-3 rounded-xl border p-3 text-xs transition-all hover:shadow-md ${alert.color}`}>
-                        <div className="flex items-center gap-2.5">
+                      <Link
+                        key={idx}
+                        to={alert.link}
+                        className={`group flex items-center justify-between gap-3 rounded-xl border p-3.5 text-xs transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 backdrop-blur-sm ${alert.color}`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
                           <Icon className="h-4.5 w-4.5 shrink-0" />
-                          <span className="font-bold">{alert.text}</span>
+                          <span className="font-bold truncate">{alert.text}</span>
                         </div>
-                        <ChevronRight className="h-4.5 w-4.5 shrink-0 opacity-60" />
+                        <ChevronRight className="h-4 w-4 shrink-0 opacity-60 transition-transform group-hover:translate-x-0.5" />
                       </Link>
                     )
                   })}

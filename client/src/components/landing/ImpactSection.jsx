@@ -36,11 +36,11 @@ export default function ImpactSection({
   const [hoveredCard, setHoveredCard] = useState(null)
 
   // Database-backed metrics
-  const total = stats?.totalReports ?? 0
-  const resolved = stats?.resolvedReports ?? 0
-  const inProgress = stats?.inProgressReports ?? 0
+  const total = stats?.reportsSubmitted ?? stats?.totalReports ?? 0
+  const resolved = stats?.issuesResolved ?? stats?.resolvedReports ?? 0
+  const inProgress = stats?.activeIssues ?? ((stats?.openReports ?? 0) + (stats?.inProgressReports ?? 0))
   const activeWards = stats?.activeWards ?? 16
-  const resolutionRate = total > 0 ? Math.round((resolved / total) * 100) : 100
+  const resolutionRate = stats?.resolutionRate ?? (total > 0 ? Math.round((resolved / total) * 100) : 0)
 
   // 1. Statistics Cards Configuration
   const statMetrics = [

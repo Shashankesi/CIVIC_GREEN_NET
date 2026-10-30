@@ -43,9 +43,16 @@ backups/
 
 # Dependencies
 node_modules/
+**/node_modules/
 client/node_modules/
 server/node_modules/
 vendor/
+
+# Python environments
+venv/
+.venv/
+__pycache__/
+*.pyc
 
 # Build outputs
 dist/
@@ -75,6 +82,7 @@ Thumbs.db
 ehthumbs.db
 
 # Temporary files & Scratch
+.tmp/
 *.tmp
 *.temp
 *.pid

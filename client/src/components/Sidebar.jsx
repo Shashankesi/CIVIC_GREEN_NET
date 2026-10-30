@@ -127,17 +127,20 @@ export default function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onClo
   }
 
   /* ============================================================
-   * OFFICER-THEMED SIDEBAR
+   * OFFICER-THEMED SIDEBAR (3D Civic Command Center)
    * ============================================================ */
   if (isOfficer) {
     const officerContent = (
       <div className="officer-sidebar flex h-full flex-col">
+        {/* Indian Tricolour subtle accent header line */}
+        <div className="officer-tricolor-bar" />
+
         {/* Brand Area */}
-        <div className={`flex h-16 items-center border-b border-white/10 px-3.5 ${collapsed ? 'justify-center' : ''}`}>
+        <div className={`flex h-16 items-center border-b border-slate-200/80 dark:border-slate-800 px-3.5 ${collapsed ? 'justify-center' : ''}`}>
           <CivicGreenNetLogo
             variant={collapsed ? 'symbol' : 'full'}
             size={collapsed ? 'sm' : 'sm'}
-            theme="white"
+            theme="auto"
             descriptor={roleLabel}
           />
         </div>
@@ -147,7 +150,7 @@ export default function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onClo
           {navSections.map((section) => (
             <div key={section.title} className="space-y-0.5">
               {!collapsed && (
-                <div className="px-3 pb-1 pt-1 text-[10px] font-bold uppercase tracking-wider text-emerald-200/50">
+                <div className="px-3 pb-1 pt-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                   {section.title}
                 </div>
               )}
@@ -162,7 +165,7 @@ export default function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onClo
                     className={({ isActive }) =>
                       `group relative flex items-center gap-3 rounded-lg px-3 py-2 text-xs font-semibold transition-all duration-150 ${
                         isActive
-                          ? 'officer-nav-active text-white'
+                          ? 'officer-nav-active'
                           : 'officer-nav-item'
                       } ${collapsed ? 'justify-center px-2' : ''}`
                     }
@@ -170,14 +173,21 @@ export default function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onClo
                     {({ isActive }) => (
                       <>
                         <div className="relative flex items-center">
-                          <Icon className={`h-4 w-4 shrink-0 transition-colors ${isActive ? 'text-white' : 'text-white/70 group-hover:text-white'}`} aria-hidden="true" />
+                          <Icon
+                            className={`h-4 w-4 shrink-0 transition-colors ${
+                              isActive
+                                ? 'text-emerald-600 dark:text-emerald-400'
+                                : 'text-slate-400 dark:text-slate-500 group-hover:text-emerald-600 dark:group-hover:text-emerald-400'
+                            }`}
+                            aria-hidden="true"
+                          />
                           {collapsed && item.badge && unreadCount > 0 && (
-                            <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-rose-500 ring-2 ring-emerald-900" />
+                            <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-rose-500 ring-2 ring-white dark:ring-slate-900" />
                           )}
                         </div>
                         {!collapsed && <span className="truncate">{item.label}</span>}
                         {!collapsed && item.badge && unreadCount > 0 && (
-                          <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-black text-white">
+                          <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[9px] font-black text-white shadow-sm">
                             {unreadCount}
                           </span>
                         )}
@@ -191,35 +201,38 @@ export default function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onClo
         </nav>
 
         {/* Officer Profile & Logout */}
-        <div className="border-t border-white/10 p-3">
-          <div className={`mb-2 flex items-center gap-3 rounded-lg bg-white/8 p-2.5 backdrop-blur-sm ${collapsed ? 'justify-center' : ''}`}>
+        <div className="border-t border-slate-200/80 dark:border-slate-800 p-3">
+          <div className={`mb-2 flex items-center gap-3 rounded-xl bg-emerald-500/8 dark:bg-slate-800/60 border border-emerald-500/20 dark:border-slate-700/60 p-2.5 backdrop-blur-sm ${collapsed ? 'justify-center' : ''}`}>
             {user?.avatar_url ? (
-              <img src={user.avatar_url} alt="Profile" className="h-9 w-9 shrink-0 rounded-full object-cover ring-2 ring-emerald-400/30" />
+              <img src={user.avatar_url} alt="Profile" className="h-9 w-9 shrink-0 rounded-full object-cover ring-2 ring-emerald-500/30" />
             ) : (
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-400/20 text-sm font-semibold text-white ring-2 ring-emerald-400/30">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-500/20 text-xs font-bold text-emerald-700 dark:text-emerald-300 ring-2 ring-emerald-500/30 shadow-inner">
                 {user?.name?.charAt(0)?.toUpperCase() || 'U'}
               </span>
             )}
             {!collapsed && (
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
-                  <div className="truncate text-sm font-semibold text-white">{user?.name || 'Officer'}</div>
-                  <span className="h-2 w-2 rounded-full bg-emerald-400 shrink-0 animate-officer-status-pulse" title="Online" />
+                  <div className="truncate text-xs font-bold text-slate-800 dark:text-slate-100">{user?.name || 'Officer'}</div>
+                  <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0 animate-officer-status-pulse ring-2 ring-emerald-200 dark:ring-emerald-950" title="Operational Online" />
                 </div>
-                <div className="truncate text-xs capitalize text-white/50">{user?.role || 'Officer'}</div>
+                <div className="truncate text-[11px] font-medium capitalize text-slate-500 dark:text-slate-400">{user?.role || 'Officer'}</div>
               </div>
             )}
           </div>
-          <div className="flex gap-1">
+          <div className="flex gap-1.5">
             {!collapsed && (
-              <button onClick={handleLogout} className="flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-red-300/80 transition-colors hover:bg-white/8 hover:text-red-300">
-                <LogOut className="h-4 w-4" aria-hidden="true" /> Logout
+              <button
+                onClick={handleLogout}
+                className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-red-200/60 dark:border-red-900/40 px-3 py-1.5 text-xs font-semibold text-red-600 dark:text-red-400 transition-all hover:bg-red-50 dark:hover:bg-red-950/30"
+              >
+                <LogOut className="h-3.5 w-3.5" aria-hidden="true" /> Logout
               </button>
             )}
             <button
               onClick={onToggleCollapse}
               aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-              className="hidden flex-1 items-center justify-center rounded-lg px-3 py-2 text-white/50 transition-colors hover:bg-white/8 hover:text-white lg:flex"
+              className="hidden flex-1 items-center justify-center rounded-lg border border-slate-200/70 dark:border-slate-800 px-3 py-1.5 text-slate-500 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-100 lg:flex"
             >
               {collapsed ? <ChevronsRight className="h-4 w-4" aria-hidden="true" /> : <ChevronsLeft className="h-4 w-4" aria-hidden="true" />}
             </button>
@@ -254,7 +267,11 @@ export default function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onClo
                 transition={{ type: 'tween', duration: 0.25 }}
                 className="fixed inset-y-0 left-0 z-50 w-72 shadow-xl lg:hidden"
               >
-                <button onClick={onCloseMobile} aria-label="Close menu" className="absolute right-3 top-4 z-10 flex h-8 w-8 items-center justify-center rounded-lg text-white/60 hover:bg-white/10 hover:text-white">
+                <button
+                  onClick={onCloseMobile}
+                  aria-label="Close menu"
+                  className="absolute right-3 top-4 z-10 flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 dark:text-slate-400"
+                >
                   <X className="h-5 w-5" aria-hidden="true" />
                 </button>
                 {officerContent}

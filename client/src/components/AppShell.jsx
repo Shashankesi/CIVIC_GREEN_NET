@@ -13,7 +13,7 @@ export default function AppShell({ children, title }) {
   const isOfficer = user?.role === 'officer'
 
   return (
-    <div className={`flex h-screen overflow-hidden ${isOfficer ? 'bg-gradient-to-br from-slate-50 via-emerald-50/30 to-cyan-50/10 dark:from-surface-darker dark:via-surface-darker dark:to-surface-darker' : 'bg-slate-50 dark:bg-surface-darker'}`}>
+    <div className={`flex h-screen overflow-hidden ${isOfficer ? 'officer-page-bg' : 'bg-slate-50 dark:bg-surface-darker'}`}>
       <Sidebar
         collapsed={collapsed}
         onToggleCollapse={() => setCollapsed(!collapsed)}

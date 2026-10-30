@@ -58,6 +58,18 @@ export default function ComplaintList() {
   const [stats, setStats] = useState(null)
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [quickChip, setQuickChip] = useState('all')
+  const [filterOptions, setFilterOptions] = useState({ departments: [], wards: [], categories: [] })
+
+  useEffect(() => {
+    if (user?.role === 'officer' || user?.role === 'admin') {
+      api.get('/officer/filters')
+        .then(res => {
+          const data = unwrapResponse(res)
+          if (data) setFilterOptions(data)
+        })
+        .catch(() => {})
+    }
+  }, [user])
 
   // Initialize tab and status filter selection from query params
   useEffect(() => {
@@ -83,7 +95,7 @@ export default function ComplaintList() {
     try {
       setStatsLoading(true)
       if (user?.role === 'officer') {
-        const res = await api.get('/officer/workload')
+        const res = await api.get('/officer/stats')
         setStats(unwrapResponse(res))
       } else if (user?.role === 'citizen') {
         const res = await api.get('/complaints/stats/summary')
@@ -119,6 +131,8 @@ export default function ComplaintList() {
       // Handle citizen vs officer tabs
       if (tab === 'mine') {
         params.mine = true
+      } else if (user?.role === 'officer') {
+        params.scope = 'all'
       }
       
       // Handle quick filter chips
@@ -362,7 +376,7 @@ export default function ComplaintList() {
                 exit={{ height: 0, opacity: 0 }}
                 className="overflow-hidden"
               >
-                <div className="border-t border-slate-50 p-5 dark:border-slate-800/80 grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <div className="border-t border-slate-50 p-5 dark:border-slate-800/80 grid grid-cols-1 gap-4 sm:grid-cols-3 lg:grid-cols-5">
                   <div>
                     <label className="block text-2xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">Category</label>
                     <select
@@ -410,7 +424,35 @@ export default function ComplaintList() {
                     </select>
                   </div>
 
-                  <div className="sm:col-span-3 flex justify-end gap-2 border-t border-slate-50 pt-4 dark:border-slate-800/80">
+                  <div>
+                    <label className="block text-2xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">Department</label>
+                    <select
+                      value={filters.departmentId || ''}
+                      onChange={(e) => setFilters(prev => ({ ...prev, departmentId: e.target.value || undefined }))}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                    >
+                      <option value="">All Departments</option>
+                      {filterOptions.departments?.map(d => (
+                        <option key={d.id} value={d.id}>{d.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-2xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">Ward</label>
+                    <select
+                      value={filters.wardId || ''}
+                      onChange={(e) => setFilters(prev => ({ ...prev, wardId: e.target.value || undefined }))}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                    >
+                      <option value="">All Wards</option>
+                      {filterOptions.wards?.map(w => (
+                        <option key={w.id} value={w.id}>{w.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="sm:col-span-3 lg:col-span-5 flex justify-end gap-2 border-t border-slate-50 pt-4 dark:border-slate-800/80">
                     <Button variant="outline" size="sm" onClick={clearAdvancedFilters} className="text-xs">
                       Clear Filters
                     </Button>

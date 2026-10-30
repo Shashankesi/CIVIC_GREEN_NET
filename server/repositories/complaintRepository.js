@@ -382,10 +382,19 @@ async function searchComplaints(opts = {}) {
     ${order}
     LIMIT $${idx++} OFFSET $${idx++}
   `;
+  const countVals = vals.slice();
   vals.push(limit, offset);
 
-  const r = await db.query(qStr, vals);
-  return r.rows;
+  const countQuery = `SELECT COUNT(*)::int AS total FROM complaints c LEFT JOIN users u ON u.id = c.user_id LEFT JOIN departments d ON d.id = c.department_id LEFT JOIN users o ON o.id = c.officer_id ${where}`;
+
+  const [r, countRes] = await Promise.all([
+    db.query(qStr, vals),
+    db.query(countQuery, countVals)
+  ]);
+
+  const rows = r.rows;
+  rows.total = countRes.rows[0]?.total ?? rows.length;
+  return rows;
 }
 
 async function getSimilarComplaints(complaintId, threshold = 0.7, limit = 5) {

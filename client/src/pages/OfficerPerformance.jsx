@@ -1,3 +1,4 @@
+import AppShell from '../components/AppShell'
 import React, { useState, useEffect, useCallback, useContext } from 'react';
 import { 
   Award, Trophy, ShieldCheck, Clock, CheckCircle2, AlertTriangle, 
@@ -45,7 +46,8 @@ export default function OfficerPerformance() {
   const resolutionRate = performance?.resolutionRate ?? 100;
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6 lg:p-8">
+    <AppShell title="Performance & Score">
+      <div className="mx-auto max-w-7xl space-y-6">
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -67,19 +69,19 @@ export default function OfficerPerformance() {
         </div>
       </div>
 
-      {/* ── KPI Grid ────────────────────────────────────────────────────────── */}
+      {/* ── KPI Grid (3D Command Center Style) ────────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {/* Total Points / Score */}
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+        <div className="officer-kpi-card p-6 rounded-2xl">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Performance Points</span>
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400">
+            <div className="officer-icon-3d flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-md shadow-blue-500/20">
               <Sparkles className="h-5 w-5" />
             </div>
           </div>
           <div className="mt-4 flex items-baseline gap-2">
             <span className="text-3xl font-black text-slate-900 dark:text-white">
-              {history.total ? (history.items.reduce((acc, x) => acc + (x.points || 0), 0) || 0) : 0}
+              {performance?.totalPoints ?? (history.total ? (history.items.reduce((acc, x) => acc + (x.points || 0), 0) || 0) : (user?.points || 0))}
             </span>
             <span className="text-xs font-bold text-blue-600 dark:text-blue-400">Units</span>
           </div>
@@ -89,10 +91,10 @@ export default function OfficerPerformance() {
         </div>
 
         {/* SLA Compliance */}
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+        <div className="officer-kpi-card p-6 rounded-2xl">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">SLA Compliance</span>
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400">
+            <div className="officer-icon-3d flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-md shadow-emerald-500/20">
               <Clock className="h-5 w-5" />
             </div>
           </div>
@@ -108,10 +110,10 @@ export default function OfficerPerformance() {
         </div>
 
         {/* Total Resolved */}
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+        <div className="officer-kpi-card p-6 rounded-2xl">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Resolved Cases</span>
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-50 text-purple-600 dark:bg-purple-500/10 dark:text-purple-400">
+            <div className="officer-icon-3d flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500 to-violet-600 text-white shadow-md shadow-purple-500/20">
               <CheckCircle2 className="h-5 w-5" />
             </div>
           </div>
@@ -127,16 +129,16 @@ export default function OfficerPerformance() {
         </div>
 
         {/* Avg Resolution Speed */}
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+        <div className="officer-kpi-card p-6 rounded-2xl">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Avg Resolution Speed</span>
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400">
+            <div className="officer-icon-3d flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 text-white shadow-md shadow-amber-500/20">
               <TrendingUp className="h-5 w-5" />
             </div>
           </div>
           <div className="mt-4 flex items-baseline gap-2">
             <span className="text-3xl font-black text-slate-900 dark:text-white">
-              {performance?.averageResolutionTime ? `${performance.averageResolutionTime}h` : '12.4h'}
+              {performance?.averageResolutionTime > 0 ? `${performance.averageResolutionTime}h` : '0.0h'}
             </span>
           </div>
           <div className="mt-3 text-xs text-slate-400">
@@ -403,6 +405,7 @@ export default function OfficerPerformance() {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </AppShell>
   );
 }

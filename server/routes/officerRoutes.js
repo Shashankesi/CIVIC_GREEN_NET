@@ -25,6 +25,14 @@ const upload = multer({
 
 router.get('/dashboard', officerCtl.dashboard);
 router.get('/workload', officerCtl.workload);
+router.get('/complaints', officerCtl.officerComplaints);
+router.get('/stats', officerCtl.officerStats);
+router.get('/assignments', officerCtl.assignedComplaints);
+router.get('/filters', officerCtl.getFilters);
+router.get('/complaints', officerCtl.officerComplaints);
+router.get('/stats', officerCtl.officerStats);
+router.get('/assignments', officerCtl.assignedComplaints);
+router.get('/filters', officerCtl.getFilters);
 router.get('/assigned', officerCtl.assignedComplaints);
 router.get('/department-stats', officerCtl.departmentStats);
 router.get('/complaints/nearby', officerCtl.nearby);

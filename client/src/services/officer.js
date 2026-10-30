@@ -105,7 +105,32 @@ export async function getComplaintTeam(id) {
   return unwrapResponse(res)
 }
 
+
+export async function getComplaints(params = {}) {
+  const res = await api.get('/officer/complaints', { params })
+  return unwrapResponse(res)
+}
+
+export async function getStats(params = {}) {
+  const res = await api.get('/officer/stats', { params })
+  return unwrapResponse(res)
+}
+
+export async function getAssignments(params = {}) {
+  const res = await api.get('/officer/assignments', { params })
+  return unwrapResponse(res)
+}
+
+export async function getFilters() {
+  const res = await api.get('/officer/filters')
+  return unwrapResponse(res)
+}
+
 export default {
+  getComplaints,
+  getStats,
+  getAssignments,
+  getFilters,
   getWorkload,
   getAssignedComplaints,
   getDepartmentStats,

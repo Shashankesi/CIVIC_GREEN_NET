@@ -11,7 +11,7 @@ export default function OfficerNearby() {
         subtitle="Geospatial lookup of community issues reported around your current GPS coordinates."
       />
 
-      <div className="card p-2 overflow-hidden shadow-md">
+      <div className="officer-card p-3 overflow-hidden rounded-2xl shadow-lg">
         <MapView
           height={650}
           showSidebar={true}

@@ -41,38 +41,48 @@ const list = asyncHandler(async (req, res) => {
   const page = parseInt(req.query.page, 10) || 1;
   const limit = parseInt(req.query.limit, 10) || 20;
   const offset = (page - 1) * limit;
-  const filters = {};
-  if (req.query.status) filters.status = req.query.status;
+
+  const searchParams = {
+    q: req.query.q || null,
+    category: req.query.category || null,
+    status: req.query.status || null,
+    priority: req.query.priority || null,
+    departmentId: req.query.departmentId || null,
+    wardId: req.query.wardId || null,
+    assigned: req.query.assigned || null,
+    dueSoon: req.query.dueSoon || null,
+    dateFrom: req.query.dateFrom || null,
+    dateTo: req.query.dateTo || null,
+    page,
+    limit,
+    sortBy: req.query.sortBy || 'created_at',
+    sortDir: req.query.sortDir || 'desc'
+  };
+
+  const uid = getUserId(req);
 
   if (req.query.mine === 'true' || req.query.mine === true) {
-    if (!req.user) return error(res, 'Unauthorized', 401);
-    const searchParams = {
-      page,
-      limit,
-      category: req.query.category || null,
-      status: req.query.status || null,
-      priority: req.query.priority || null,
-      sortBy: req.query.sortBy || 'created_at',
-      sortDir: req.query.sortDir || 'desc'
-    };
-    if (req.user.role === 'citizen') searchParams.userId = getUserId(req);
-    else if (req.user.role === 'officer') searchParams.officerId = getUserId(req);
+    if (!req.user || !uid) return error(res, 'Unauthorized', 401);
+    if (req.user.role === 'citizen') searchParams.userId = uid;
+    else if (req.user.role === 'officer') searchParams.officerId = uid;
+  } else if (req.user && req.user.role === 'officer') {
+    if (req.query.scope === 'jurisdiction') {
+      searchParams.officerScopeId = uid;
+    }
+    // When scope !== 'jurisdiction' (such as viewing 'all'), officer can view all municipal complaints
+  }
+
+  if (req.query.q || req.query.category || req.query.priority || req.query.departmentId || req.query.mine || req.query.assigned || req.query.dueSoon || req.query.scope || (req.user && req.user.role === 'officer')) {
     const rows = await complaintService.searchComplaints(searchParams);
-    return success(res, { items: rows, page, limit });
+    const total = rows.total ?? rows.length;
+    return success(res, { items: rows, page, limit, total });
   }
 
-  if (req.user && req.user.role === 'officer') {
-    const rows = await complaintService.searchComplaints({
-      page,
-      limit,
-      officerScopeId: getUserId(req),
-      status: req.query.status || null
-    });
-    return success(res, { items: rows, page, limit });
-  }
-
+  const filters = {};
+  if (req.query.status) filters.status = req.query.status;
   const rows = await complaintService.listComplaints({ limit, offset, filters });
-  return success(res, { items: rows, page, limit });
+  const total = rows.total ?? rows.length;
+  return success(res, { items: rows, page, limit, total });
 });
 
 const get = asyncHandler(async (req, res) => {
@@ -213,8 +223,8 @@ const search = asyncHandler(async (req, res) => {
     lat: req.query.lat ? parseFloat(req.query.lat) : null,
     lng: req.query.lng ? parseFloat(req.query.lng) : null,
     radius: req.query.radius ? parseFloat(req.query.radius) : null,
-    page: parseInt(req.query.page,10) || 1,
-    limit: parseInt(req.query.limit,10) || 20,
+    page: parseInt(req.query.page, 10) || 1,
+    limit: parseInt(req.query.limit, 10) || 20,
     sortBy: req.query.sortBy || 'created_at',
     sortDir: req.query.sortDir || 'desc',
     assigned: req.query.assigned || null,
@@ -230,11 +240,14 @@ const search = asyncHandler(async (req, res) => {
       params.officerId = uid;
     }
   } else if (req.user && req.user.role === 'officer') {
-    params.officerScopeId = uid;
+    if (req.query.scope === 'jurisdiction') {
+      params.officerScopeId = uid;
+    }
   }
 
   const rows = await complaintService.searchComplaints(params);
-  return success(res, { items: rows, page: params.page });
+  const total = rows.total ?? rows.length;
+  return success(res, { items: rows, page: params.page, limit: params.limit, total });
 });
 
 const similar = asyncHandler(async (req, res) => {

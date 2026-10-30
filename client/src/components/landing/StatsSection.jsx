@@ -9,16 +9,16 @@ export default function StatsSection({
   onRefresh
 }) {
   const hasStats = stats !== null && stats !== undefined
-  const total = stats?.totalReports ?? 0
-  const resolved = stats?.resolvedReports ?? 0
-  const activeIssues = stats?.openReports ?? 0
-  const activeWards = stats?.activeWards ?? 0
-  const resolutionRate = total > 0 ? Math.round((resolved / total) * 100) : 0
+  const reportsSubmitted = stats?.reportsSubmitted ?? stats?.totalReports ?? 0
+  const issuesResolved = stats?.issuesResolved ?? stats?.resolvedReports ?? 0
+  const activeIssues = stats?.activeIssues ?? ((stats?.openReports ?? 0) + (stats?.inProgressReports ?? 0))
+  const activeWards = stats?.activeWards ?? 16
+  const resolutionRate = stats?.resolutionRate ?? (reportsSubmitted > 0 ? Math.round((issuesResolved / reportsSubmitted) * 100) : 0)
 
   const statCards = [
     {
       icon: FileText,
-      value: total,
+      value: reportsSubmitted,
       label: 'Reports Submitted',
       iconBg: 'bg-blue-500/10 dark:bg-blue-500/20',
       iconColor: 'text-blue-600 dark:text-blue-400',
@@ -26,7 +26,7 @@ export default function StatsSection({
     },
     {
       icon: CheckCircle2,
-      value: resolved,
+      value: issuesResolved,
       label: 'Issues Resolved',
       iconBg: 'bg-emerald-500/10 dark:bg-emerald-500/20',
       iconColor: 'text-[#138808] dark:text-emerald-400',

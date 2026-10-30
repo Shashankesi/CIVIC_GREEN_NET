@@ -994,7 +994,170 @@ async function getPerformance(req, res) {
   }
 }
 
+
+// Officer full complaints query endpoint (supporting search, status, priority, department, ward, scope)
+async function officerComplaints(req, res) {
+  try {
+    const officerId = getUserId(req);
+    const {
+      q,
+      category,
+      status,
+      priority,
+      departmentId,
+      wardId,
+      assigned,
+      dueSoon,
+      dateFrom,
+      dateTo,
+      mine,
+      scope,
+      page = 1,
+      limit = 20,
+      sortBy = 'created_at',
+      sortDir = 'desc'
+    } = req.query;
+
+    const opts = {
+      q: q || null,
+      category: category && category !== 'all' ? category : null,
+      status: status && status !== 'all' ? status : null,
+      priority: priority && priority !== 'all' ? priority : null,
+      departmentId: departmentId ? parseInt(departmentId, 10) : null,
+      assigned: assigned || null,
+      dueSoon: dueSoon || null,
+      dateFrom: dateFrom || null,
+      dateTo: dateTo || null,
+      page: parseInt(page, 10) || 1,
+      limit: parseInt(limit, 10) || 20,
+      sortBy: sortBy || 'created_at',
+      sortDir: sortDir || 'desc'
+    };
+
+    if (mine === 'true' || scope === 'mine') {
+      opts.officerId = officerId;
+    } else if (scope === 'jurisdiction') {
+      opts.officerScopeId = officerId;
+    }
+
+    const items = await complaintRepo.searchComplaints(opts);
+    await complaintService.enrichComplaintsWithImages(items);
+
+    const total = items.total ?? items.length;
+
+    return success(res, {
+      items,
+      page: opts.page,
+      limit: opts.limit,
+      total
+    });
+  } catch (err) {
+    return handleError(res, err);
+  }
+}
+
+// Officer operational stats (Total Operational, Open Queue, In Progress, Critical Alerts, Unassigned)
+async function officerStats(req, res) {
+  try {
+    const officerId = getUserId(req);
+    const scope = req.query.scope || 'all';
+
+    let scopeCondition = '1=1';
+    const vals = [officerId];
+    let idx = 2;
+
+    if (scope === 'jurisdiction') {
+      const officerRes = await db.query(`
+        SELECT u.department_id, u.settings, u.municipality_id, u.zone_id, u.ward_id, u.jurisdiction,
+               m.name AS municipality_name, z.name AS zone_name, w.name AS ward_name,
+               d.name AS department_name
+        FROM users u
+        LEFT JOIN municipalities m ON m.id = u.municipality_id
+        LEFT JOIN zones z ON z.id = u.zone_id
+        LEFT JOIN wards w ON w.id = u.ward_id
+        LEFT JOIN departments d ON d.id = u.department_id
+        WHERE u.id = $1
+      `, [officerId]);
+
+      if (officerRes.rows.length) {
+        const u = officerRes.rows[0];
+        const scopeConditions = ['c.officer_id = $1'];
+        if (u.department_id) {
+          scopeConditions.push(`c.department_id = ${idx++}`);
+          vals.push(u.department_id);
+        }
+        if (u.ward_name) {
+          scopeConditions.push(`c.address ILIKE ${idx++}`);
+          vals.push(`%${u.ward_name}%`);
+        }
+        scopeCondition = `(${scopeConditions.join(' OR ')})`;
+      }
+    }
+
+    const q = `
+      SELECT
+        COUNT(*)::int AS total,
+        COUNT(CASE WHEN c.officer_id = $1 THEN 1 END)::int AS assigned_to_me,
+        COUNT(CASE WHEN c.status = 'open' THEN 1 END)::int AS open,
+        COUNT(CASE WHEN c.status IN ('in_progress', 'assigned', 'accepted', 'reopened') THEN 1 END)::int AS in_progress,
+        COUNT(CASE WHEN c.priority = 'critical' AND c.status NOT IN ('resolved', 'closed', 'rejected') THEN 1 END)::int AS critical,
+        COUNT(CASE WHEN c.priority = 'high' AND c.status NOT IN ('resolved', 'closed', 'rejected') THEN 1 END)::int AS high_priority,
+        COUNT(CASE WHEN c.status = 'resolved' THEN 1 END)::int AS resolved,
+        COUNT(CASE WHEN c.status = 'closed' THEN 1 END)::int AS closed,
+        COUNT(CASE WHEN c.officer_id IS NULL AND c.status NOT IN ('resolved', 'closed', 'rejected') THEN 1 END)::int AS unassigned,
+        COUNT(CASE WHEN c.status NOT IN ('resolved', 'closed', 'rejected') AND c.sla_due_at IS NOT NULL AND c.sla_due_at > now() AND c.sla_due_at <= now() + INTERVAL '24 hours' THEN 1 END)::int AS due_soon,
+        COUNT(CASE WHEN c.status NOT IN ('resolved', 'closed', 'rejected') AND c.sla_due_at IS NOT NULL AND c.sla_due_at < now() THEN 1 END)::int AS overdue
+      FROM complaints c
+      WHERE ${scopeCondition}
+    `;
+
+    const resDb = await db.query(q, vals);
+    const row = resDb.rows[0] || {};
+
+    return success(res, {
+      total: row.total || 0,
+      open: row.open || 0,
+      in_progress: row.in_progress || 0,
+      critical: row.critical || 0,
+      high_priority: row.high_priority || 0,
+      unassigned: row.unassigned || 0,
+      assigned_to_me: row.assigned_to_me || 0,
+      resolved: row.resolved || 0,
+      closed: row.closed || 0,
+      due_soon: row.due_soon || 0,
+      overdue: row.overdue || 0
+    });
+  } catch (err) {
+    return handleError(res, err);
+  }
+}
+
+// Available filters for officer portal
+async function getFilters(req, res) {
+  try {
+    const [depts, wards, zones, cats] = await Promise.all([
+      db.query('SELECT id, name FROM departments ORDER BY name ASC'),
+      db.query('SELECT id, name, zone_id FROM wards ORDER BY name ASC'),
+      db.query('SELECT id, name FROM zones ORDER BY name ASC'),
+      db.query('SELECT DISTINCT category FROM complaints WHERE category IS NOT NULL ORDER BY category ASC')
+    ]);
+    return success(res, {
+      departments: depts.rows,
+      wards: wards.rows,
+      zones: zones.rows,
+      categories: cats.rows.map(r => r.category).filter(Boolean),
+      statuses: ['open', 'assigned', 'in_progress', 'resolved', 'closed', 'rejected'],
+      priorities: ['low', 'medium', 'high', 'critical']
+    });
+  } catch (err) {
+    return handleError(res, err);
+  }
+}
+
 module.exports = {
+  officerComplaints,
+  officerStats,
+  getFilters,
   dashboard,
   workload,
   assignedComplaints,

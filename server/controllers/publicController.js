@@ -113,9 +113,9 @@ async function getPublicStats(req, res, next) {
     const [complaintsRes, deptsRes, officersRes, wardsRes] = await Promise.all([
       db.query(`
         SELECT 
-          COUNT(*)::int as total,
+          COUNT(*) FILTER (WHERE status != 'rejected')::int as total,
           COUNT(*) FILTER (WHERE status = 'open')::int as open,
-          COUNT(*) FILTER (WHERE status = 'in_progress')::int as in_progress,
+          COUNT(*) FILTER (WHERE status IN ('assigned', 'accepted', 'in_progress', 'reopened'))::int as in_progress,
           COUNT(*) FILTER (WHERE status = 'resolved')::int as resolved,
           COUNT(*) FILTER (WHERE status = 'closed')::int as closed,
           COUNT(*) FILTER (WHERE status IN ('resolved', 'closed'))::int as completed,
@@ -135,34 +135,30 @@ async function getPublicStats(req, res, next) {
     ]);
 
     const compRow = complaintsRes.rows[0] || {};
-    const totalReports = compRow.total || 0;
-    const openReports = compRow.open || 0;
-    const inProgressReports = compRow.in_progress || 0;
-    const resolvedOnly = compRow.resolved || 0;
-    const closedOnly = compRow.closed || 0;
-    const resolvedReports = compRow.completed || (resolvedOnly + closedOnly);
+    const reportsSubmitted = compRow.total || 0;
+    const issuesResolved = compRow.completed || 0;
+    const activeIssues = (compRow.open || 0) + (compRow.in_progress || 0);
+    const activeWards = wardsRes.rows[0]?.total ?? 16;
+    const resolutionRate = reportsSubmitted > 0 ? Math.round((issuesResolved / reportsSubmitted) * 100) : 0;
     const activeDepartments = deptsRes.rows[0]?.total || 0;
     const activeOfficers = officersRes.rows[0]?.total || 0;
-
-    const resolutionRate = totalReports > 0 
-      ? Math.round((resolvedReports / totalReports) * 1000) / 10 
-      : null;
     const rawAvgHours = parseFloat(compRow.avg_resolution_hours);
-    const avgResolutionHours = (resolvedReports > 0 && !isNaN(rawAvgHours) && rawAvgHours > 0)
+    const avgResolutionHours = (issuesResolved > 0 && !isNaN(rawAvgHours) && rawAvgHours > 0)
       ? Math.round(rawAvgHours * 10) / 10
       : null;
 
-    const activeWards = wardsRes.rows[0]?.total ?? 16;
-
     const result = {
-      totalReports,
-      openReports,
-      inProgressReports,
-      resolvedReports,
-      activeOfficers,
-      departments: activeDepartments,
+      reportsSubmitted,
+      issuesResolved,
+      activeIssues,
       activeWards,
       resolutionRate,
+      totalReports: reportsSubmitted,
+      openReports: compRow.open || 0,
+      inProgressReports: compRow.in_progress || 0,
+      resolvedReports: issuesResolved,
+      activeOfficers,
+      departments: activeDepartments,
       avgResolutionHours,
       timestamp: new Date().toISOString()
     };

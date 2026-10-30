@@ -36,6 +36,12 @@
     "supertest": "^6.3.3"
   },
   "jest": {
-    "testTimeout": 30000
+    "testTimeout": 30000,
+    "testMatch": [
+      "<rootDir>/tests/**/*.test.js"
+    ],
+    "testPathIgnorePatterns": [
+      "/node_modules/"
+    ]
   }
 }
