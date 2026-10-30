@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-export const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5000/api';
+export const API_BASE = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE) || 'http://localhost:5000/api';
 
 // Simple token store using localStorage
 const TOKEN_KEY = 'cgn_tokens';

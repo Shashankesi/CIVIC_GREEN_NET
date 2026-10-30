@@ -110,7 +110,7 @@ async function getPublicStats(req, res, next) {
       return success(res, cached);
     }
 
-    const [complaintsRes, deptsRes, officersRes] = await Promise.all([
+    const [complaintsRes, deptsRes, officersRes, wardsRes] = await Promise.all([
       db.query(`
         SELECT 
           COUNT(*)::int as total,
@@ -130,7 +130,8 @@ async function getPublicStats(req, res, next) {
         FROM complaints
       `),
       db.query('SELECT COUNT(*)::int as total FROM departments'),
-      db.query("SELECT COUNT(*)::int as total FROM users WHERE role = 'officer' AND status IN ('active', 'approved')")
+      db.query("SELECT COUNT(*)::int as total FROM users WHERE role = 'officer' AND status IN ('active', 'approved')"),
+      db.query('SELECT COUNT(*)::int as total FROM wards').catch(() => ({ rows: [{ total: 16 }] }))
     ]);
 
     const compRow = complaintsRes.rows[0] || {};
@@ -151,6 +152,8 @@ async function getPublicStats(req, res, next) {
       ? Math.round(rawAvgHours * 10) / 10
       : null;
 
+    const activeWards = wardsRes.rows[0]?.total ?? 16;
+
     const result = {
       totalReports,
       openReports,
@@ -158,6 +161,7 @@ async function getPublicStats(req, res, next) {
       resolvedReports,
       activeOfficers,
       departments: activeDepartments,
+      activeWards,
       resolutionRate,
       avgResolutionHours,
       timestamp: new Date().toISOString()

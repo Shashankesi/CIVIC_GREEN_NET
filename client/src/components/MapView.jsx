@@ -14,16 +14,18 @@ import 'leaflet.markercluster/dist/leaflet.markercluster.js'
 import 'leaflet.heat'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Link, useNavigate } from 'react-router-dom'
+import toast from 'react-hot-toast'
 import {
   LocateFixed, Thermometer, X, Search, Loader2, Navigation2,
   AlertCircle, RefreshCw, SlidersHorizontal, MapPin, ChevronDown,
   ArrowRight, Target, Radio, Layers, Flame, Clock, Sparkles,
   Repeat, ShieldCheck, Building2, User, ExternalLink, CheckCircle2,
-  AlertTriangle, Filter
+  AlertTriangle, Filter, FileText, Compass
 } from 'lucide-react'
 import mapsApi from '../services/maps'
 import complaintsApi from '../services/complaints'
 import maptiler from '../services/maptiler'
+import { searchLocations, searchTicketComplaint, isTicketQuery } from '../services/geocoding'
 import {
   getTileConfig, STATUS_META, PRIORITY_META, CATEGORY_OPTIONS,
   STATUS_OPTIONS, PRIORITY_OPTIONS, RADIUS_OPTIONS, TIME_OPTIONS,
@@ -222,11 +224,44 @@ function HeatLayer({ points }) {
   return null
 }
 
+function createSearchLocationIcon() {
+  const html = `
+    <div style="position:relative;display:flex;align-items:center;justify-content:center;">
+      <div style="position:absolute;width:40px;height:40px;border-radius:50%;background:rgba(19,136,8,0.25);animation:ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
+      <div style="position:relative;width:32px;height:32px;border-radius:50%;background:#138808;color:white;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(0,0,0,0.3);border:2.5px solid white;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+      </div>
+    </div>
+  `
+  return L.divIcon({
+    className: 'cgn-search-pin',
+    html,
+    iconSize: [32, 32],
+    iconAnchor: [16, 16],
+    popupAnchor: [0, -16]
+  })
+}
+
 function MapPanController({ targetCenter, targetZoom }) {
   const map = useMap()
+  const prevRef = useRef({ lat: null, lng: null, zoom: null })
+
   useEffect(() => {
-    if (targetCenter && targetCenter[0] && targetCenter[1]) {
-      map.flyTo(targetCenter, targetZoom || map.getZoom(), { duration: 1.2 })
+    if (targetCenter && targetCenter[0] != null && targetCenter[1] != null) {
+      const lat = targetCenter[0]
+      const lng = targetCenter[1]
+      const zoom = targetZoom || map.getZoom()
+
+      if (
+        prevRef.current.lat === lat &&
+        prevRef.current.lng === lng &&
+        prevRef.current.zoom === zoom
+      ) {
+        return
+      }
+
+      prevRef.current = { lat, lng, zoom }
+      map.flyTo([lat, lng], zoom, { duration: 1.4, easeLinearity: 0.25 })
     }
   }, [map, targetCenter, targetZoom])
   return null
@@ -323,9 +358,169 @@ export default function MapView({
 
   // Search & Geolocation
   const [searchQuery, setSearchQuery] = useState('')
+  const [searchSuggestions, setSearchSuggestions] = useState([])
+  const [searching, setSearching] = useState(false)
+  const [searchStatus, setSearchStatus] = useState('idle') // idle | typing | loading | results | selected | empty | error
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [selectedIndex, setSelectedIndex] = useState(-1)
+  const [searchMarker, setSearchMarker] = useState(null)
+  const [panTargetZoom, setPanTargetZoom] = useState(null)
   const [userLocation, setUserLocation] = useState(null)
   const [locating, setLocating] = useState(false)
   const [layerMenuOpen, setLayerMenuOpen] = useState(false)
+
+  const searchAbortRef = useRef(null)
+  const searchBoxRef = useRef(null)
+  const isTypingRef = useRef(false)
+  const lastFetchedQueryRef = useRef('')
+  const wardsRef = useRef(wards)
+  const complaintsRef = useRef(complaints)
+  wardsRef.current = wards
+  complaintsRef.current = complaints
+
+  // Close search suggestions on click outside without clearing selected location
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (searchBoxRef.current && !searchBoxRef.current.contains(e.target)) {
+        setShowSuggestions(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  // Debounced search autocomplete (450ms delay, strictly on user typing)
+  useEffect(() => {
+    // If input change was NOT initiated by user typing (e.g. selection or reset), skip
+    if (!isTypingRef.current) {
+      return
+    }
+
+    const trimmed = searchQuery.trim()
+    if (trimmed.length < 2) {
+      setSearchSuggestions([])
+      setSearching(false)
+      setShowSuggestions(false)
+      setSearchStatus('idle')
+      return
+    }
+
+    // Prevent duplicate request if query has not changed
+    if (trimmed.toLowerCase() === lastFetchedQueryRef.current.toLowerCase()) {
+      return
+    }
+
+    if (searchAbortRef.current) {
+      searchAbortRef.current.abort()
+    }
+    const controller = new AbortController()
+    searchAbortRef.current = controller
+
+    setSearching(true)
+    setSearchStatus('loading')
+
+    const timeout = setTimeout(async () => {
+      try {
+        const combined = []
+        const currentWards = wardsRef.current || []
+        const currentComplaints = complaintsRef.current || []
+
+        // 1. Check local wards
+        const matchedWards = currentWards
+          .filter((w) => w.name && w.name.toLowerCase().includes(trimmed.toLowerCase()))
+          .slice(0, 3)
+        for (const w of matchedWards) {
+          if (w.geojson?.coordinates) {
+            const coords = w.geojson.coordinates[0][0]
+            combined.push({
+              id: `ward-${w.id}`,
+              name: w.name,
+              subtitle: `Municipal Ward • ${w.zone || 'City Jurisdiction'}`,
+              formatted: `${w.name}, Ward Jurisdiction`,
+              lat: coords[1],
+              lng: coords[0],
+              zoom: 14,
+              type: 'ward',
+              wardObj: w
+            })
+          }
+        }
+
+        // 2. Check ticket ID or complaints
+        if (isTicketQuery(trimmed)) {
+          const ticketComp = await searchTicketComplaint(trimmed)
+          if (ticketComp && ticketComp.lat && ticketComp.lng) {
+            combined.push({
+              id: `ticket-${ticketComp.id}`,
+              name: `#${ticketComp.ticketId || ticketComp.id} — ${ticketComp.title || 'Civic Complaint'}`,
+              subtitle: `${ticketComp.category || 'General'} • Status: ${ticketComp.status || 'Active'}`,
+              formatted: ticketComp.address || 'Reported Location',
+              lat: ticketComp.lat,
+              lng: ticketComp.lng,
+              zoom: 16,
+              type: 'ticket',
+              complaintObj: ticketComp
+            })
+          }
+        }
+
+        // In-memory complaints matching
+        const matchedComps = currentComplaints
+          .filter(
+            (c) =>
+              (c.ticketId && c.ticketId.toLowerCase().includes(trimmed.toLowerCase())) ||
+              (c.title && c.title.toLowerCase().includes(trimmed.toLowerCase())) ||
+              String(c.id) === trimmed
+          )
+          .slice(0, 2)
+        for (const c of matchedComps) {
+          if (c.lat && c.lng && !combined.some((item) => item.id === `ticket-${c.id}`)) {
+            combined.push({
+              id: `ticket-${c.id}`,
+              name: `#${c.ticketId || c.id} — ${c.title || 'Civic Complaint'}`,
+              subtitle: `${c.category || 'General'} • Status: ${c.status || 'Active'}`,
+              formatted: c.address || 'Reported Location',
+              lat: c.lat,
+              lng: c.lng,
+              zoom: 16,
+              type: 'ticket',
+              complaintObj: c
+            })
+          }
+        }
+
+        // 3. Search geographical places (cities, sectors, landmarks, streets)
+        const places = await searchLocations(trimmed, { signal: controller.signal })
+        for (const p of places) {
+          if (
+            !combined.some(
+              (item) => Math.abs(item.lat - p.lat) < 0.002 && Math.abs(item.lng - p.lng) < 0.002
+            )
+          ) {
+            combined.push(p)
+          }
+        }
+
+        lastFetchedQueryRef.current = trimmed
+        setSearchSuggestions(combined)
+        setShowSuggestions(true)
+        setSearchStatus(combined.length > 0 ? 'results' : 'empty')
+        setSelectedIndex(-1)
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          console.warn('Search autocomplete error:', err)
+          setSearchStatus('error')
+        }
+      } finally {
+        setSearching(false)
+      }
+    }, 450)
+
+    return () => {
+      clearTimeout(timeout)
+      controller.abort()
+    }
+  }, [searchQuery])
 
   // 1. Fetch Wards & Static Layers on Mount
   useEffect(() => {
@@ -433,49 +628,196 @@ export default function MapView({
 
   // 4. Geolocation handler
   const handleLocateMe = () => {
-    if (!navigator.geolocation) return
+    if (!navigator.geolocation) {
+      toast.error('Geolocation is not supported by your browser')
+      return
+    }
     setLocating(true)
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const { latitude, longitude } = pos.coords
         setUserLocation({ lat: latitude, lng: longitude })
         setPanTarget([latitude, longitude])
+        setPanTargetZoom(15)
         setLocating(false)
+        toast.success('Centered on your current location', { id: 'cgn-locate' })
       },
-      () => setLocating(false),
+      (err) => {
+        setLocating(false)
+        if (err.code === 1) {
+          toast.error('Location permission was denied. Please enable location access in browser.', { id: 'cgn-locate' })
+        } else {
+          toast.error('Unable to retrieve your location.', { id: 'cgn-locate' })
+        }
+      },
       { enableHighAccuracy: true, timeout: 10000 }
     )
   }
 
-  // 5. Search handler
-  const handleSearch = (e) => {
-    e.preventDefault()
-    if (!searchQuery.trim()) return
+  // 5. Autocomplete selection handler
+  const handleSelectSuggestion = (item) => {
+    // Disarm typing flag immediately so no new autocomplete request is fired
+    isTypingRef.current = false
 
-    // Check if searching for a ward
-    const wardMatch = wards.find(w => w.name.toLowerCase().includes(searchQuery.trim().toLowerCase()))
-    if (wardMatch && wardMatch.geojson?.coordinates) {
-      const coords = wardMatch.geojson.coordinates[0][0]
-      setPanTarget([coords[1], coords[0]])
-      setSelectedWard(wardMatch)
+    // Close dropdown immediately and clear suggestions & loading
+    setShowSuggestions(false)
+    setSearching(false)
+    setSearchSuggestions([])
+    setSelectedIndex(-1)
+    setSearchStatus('selected')
+
+    // Store the location name in the input field
+    const displayName = item.formatted || item.name || ''
+    setSearchQuery(displayName)
+    lastFetchedQueryRef.current = displayName
+
+    if (item.type === 'ticket' && item.complaintObj) {
+      setPanTarget([item.lat, item.lng])
+      setPanTargetZoom(item.zoom || 16)
+      setSelectedComplaint(item.complaintObj)
+      toast.success(`Complaint #${item.complaintObj.ticketId || item.complaintObj.id} located`, { id: 'cgn-search' })
       return
     }
 
-    // Check if searching for complaint in current list
-    const compMatch = complaints.find(c =>
-      String(c.id) === searchQuery.trim() ||
-      c.ticketId?.toLowerCase() === searchQuery.trim().toLowerCase() ||
-      c.title?.toLowerCase().includes(searchQuery.trim().toLowerCase())
-    )
-    if (compMatch && compMatch.lat && compMatch.lng) {
-      setPanTarget([compMatch.lat, compMatch.lng])
-      setSelectedComplaint(compMatch)
+    if (item.type === 'ward') {
+      const currentWards = wardsRef.current || []
+      const wardMatch = currentWards.find(
+        (w) => w.id === item.id || (w.name && w.name.toLowerCase() === item.name.toLowerCase())
+      )
+      if (wardMatch) {
+        setSelectedWard(wardMatch)
+        setPanTarget([item.lat, item.lng])
+        setPanTargetZoom(item.zoom || 14)
+        toast.success(`Navigated to ${item.name}`, { id: 'cgn-search' })
+        return
+      }
+    }
+
+    // Geographical location selection
+    if (item.lat && item.lng && !isNaN(item.lat) && !isNaN(item.lng)) {
+      setPanTarget([item.lat, item.lng])
+      setPanTargetZoom(item.zoom || 14)
+      setSearchMarker({
+        lat: item.lat,
+        lng: item.lng,
+        title: item.name || 'Selected Location',
+        address: item.subtitle ? `${item.name}, ${item.subtitle}` : item.formatted || item.name
+      })
+      toast.success('Location selected successfully', { id: 'cgn-search' })
+    } else {
+      toast.error('Unable to locate coordinates for the selected place.', { id: 'cgn-search' })
+    }
+  }
+
+  // 6. Clear search and restore view
+  const handleClear = () => {
+    isTypingRef.current = false
+    setSearchQuery('')
+    lastFetchedQueryRef.current = ''
+    setSearchSuggestions([])
+    setShowSuggestions(false)
+    setSearching(false)
+    setSearchStatus('idle')
+    setSelectedIndex(-1)
+    setSearchMarker(null)
+    setPanTarget(initialCenter)
+    setPanTargetZoom(initialZoom)
+  }
+
+  // 7. Keyboard navigation for autocomplete dropdown
+  const handleKeyDown = (e) => {
+    if (e.key === 'Escape') {
+      setShowSuggestions(false)
       return
+    }
+
+    if (!showSuggestions || searchSuggestions.length === 0) return
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setSelectedIndex((prev) => (prev < searchSuggestions.length - 1 ? prev + 1 : 0))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setSelectedIndex((prev) => (prev > 0 ? prev - 1 : searchSuggestions.length - 1))
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      if (selectedIndex >= 0 && selectedIndex < searchSuggestions.length) {
+        handleSelectSuggestion(searchSuggestions[selectedIndex])
+      } else if (searchSuggestions.length > 0) {
+        handleSelectSuggestion(searchSuggestions[0])
+      }
+    }
+  }
+
+  // 8. Search submission handler (form enter or Go button)
+  const handleSearch = async (e) => {
+    e?.preventDefault?.()
+    if (!searchQuery.trim()) return
+
+    // If an item was actively highlighted in suggestions, pick it
+    if (selectedIndex >= 0 && searchSuggestions[selectedIndex]) {
+      handleSelectSuggestion(searchSuggestions[selectedIndex])
+      return
+    }
+
+    // If suggestions are currently populated, pick the first match
+    if (searchSuggestions.length > 0) {
+      handleSelectSuggestion(searchSuggestions[0])
+      return
+    }
+
+    // Direct ticket ID search
+    if (isTicketQuery(searchQuery)) {
+      setSearching(true)
+      const found = await searchTicketComplaint(searchQuery)
+      setSearching(false)
+      if (found && found.lat && found.lng) {
+        setPanTarget([found.lat, found.lng])
+        setPanTargetZoom(16)
+        setSelectedComplaint(found)
+        setShowSuggestions(false)
+        toast.success(`Complaint #${found.ticketId || found.id} located`, { id: 'cgn-search' })
+        return
+      }
+    }
+
+    // Direct ward search
+    const currentWards = wardsRef.current || []
+    const wardMatch = currentWards.find(
+      (w) => w.name && w.name.toLowerCase().includes(searchQuery.trim().toLowerCase())
+    )
+    if (wardMatch && wardMatch.geojson?.coordinates) {
+      const coords = wardMatch.geojson.coordinates[0][0]
+      setPanTarget([coords[1], coords[0]])
+      setPanTargetZoom(14)
+      setSelectedWard(wardMatch)
+      setShowSuggestions(false)
+      toast.success(`Ward ${wardMatch.name} located`, { id: 'cgn-search' })
+      return
+    }
+
+    // Geocode query on the fly
+    isTypingRef.current = false
+    setSearching(true)
+    setSearchStatus('loading')
+    try {
+      const places = await searchLocations(searchQuery)
+      if (places.length > 0) {
+        handleSelectSuggestion(places[0])
+      } else {
+        toast.error(`No matching locations found for "${searchQuery}"`, { id: 'cgn-search' })
+        setSearchStatus('empty')
+      }
+    } catch {
+      toast.error('Search service unavailable. Please try again.', { id: 'cgn-search' })
+      setSearchStatus('error')
+    } finally {
+      setSearching(false)
     }
   }
 
   const toggleLayer = (layerKey) => {
-    setActiveLayers(prev => ({ ...prev, [layerKey]: !prev[layerKey] }))
+    setActiveLayers((prev) => ({ ...prev, [layerKey]: !prev[layerKey] }))
   }
 
   const tileConfig = getTileConfig(isDark)
@@ -484,24 +826,121 @@ export default function MapView({
     <div className="relative rounded-3xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-md bg-slate-100 dark:bg-slate-900" style={{ height }}>
       {/* ── Top GIS Command Toolbar ────────────────────────────────────────── */}
       <div className="absolute top-4 left-4 right-4 z-[1000] flex flex-wrap items-center justify-between gap-2.5 pointer-events-none">
-        {/* Search Bar */}
-        <form onSubmit={handleSearch} className="pointer-events-auto flex items-center bg-white/90 dark:bg-slate-900/90 backdrop-blur-md rounded-2xl shadow-lg border border-slate-200/80 dark:border-slate-700/80 p-1 px-3 w-full max-w-sm sm:max-w-md">
-          <Search className="h-4 w-4 text-slate-400 shrink-0 mr-2" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search Ticket ID (CGN-00123), Ward, Area..."
-            className="w-full bg-transparent text-xs font-semibold text-slate-800 dark:text-white placeholder:text-slate-400 focus:outline-none py-1.5"
-          />
-          {loading ? (
-            <Loader2 className="h-4 w-4 text-emerald-500 animate-spin shrink-0" />
-          ) : (
-            <button type="submit" className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 px-2 py-0.5 hover:underline">
-              Go
-            </button>
+        {/* Search Bar with Autocomplete Dropdown */}
+        <div ref={searchBoxRef} className="pointer-events-auto relative w-full max-w-sm sm:max-w-md">
+          <form
+            onSubmit={handleSearch}
+            className="flex items-center bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl shadow-lg border border-slate-200/90 dark:border-slate-700/90 p-1 px-3 transition-all focus-within:ring-2 focus-within:ring-emerald-500 focus-within:border-emerald-500"
+          >
+            <Search className="h-4 w-4 text-slate-400 shrink-0 mr-2" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => {
+                isTypingRef.current = true
+                setSearchQuery(e.target.value)
+                setSearchStatus('typing')
+                if (!showSuggestions && e.target.value.trim().length >= 2) {
+                  setShowSuggestions(true)
+                }
+              }}
+              onFocus={() => {
+                if (searchSuggestions.length > 0 && searchQuery.trim().length >= 2) {
+                  setShowSuggestions(true)
+                }
+              }}
+              onKeyDown={handleKeyDown}
+              placeholder="Search location (Mohali, Chandigarh, Delhi, Area)..."
+              className="w-full bg-transparent text-xs font-semibold text-slate-800 dark:text-white placeholder:text-slate-400 focus:outline-none py-1.5"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={handleClear}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 mr-1 cursor-pointer"
+                title="Clear search"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+            {searching ? (
+              <Loader2 className="h-4 w-4 text-emerald-500 animate-spin shrink-0" />
+            ) : (
+              <button
+                type="submit"
+                className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 transition-colors cursor-pointer"
+              >
+                Go
+              </button>
+            )}
+          </form>
+
+          {/* Autocomplete Suggestions Dropdown */}
+          {showSuggestions && (
+            <div className="absolute left-0 right-0 top-full mt-2 bg-white/95 dark:bg-[#0E1B2E]/95 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-200/90 dark:border-slate-700/90 overflow-hidden z-[1200] max-h-72 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800 animate-in fade-in zoom-in-95 duration-150">
+              {searching && searchSuggestions.length === 0 ? (
+                <div className="px-4 py-3.5 flex items-center justify-center gap-2 text-xs text-slate-500 dark:text-slate-400 font-medium">
+                  <Loader2 className="h-3.5 w-3.5 text-emerald-600 animate-spin" />
+                  <span>Searching locations...</span>
+                </div>
+              ) : searchSuggestions.length > 0 ? (
+                searchSuggestions.map((item, idx) => {
+                  const isSelected = idx === selectedIndex
+                  return (
+                    <button
+                      key={item.id || idx}
+                      type="button"
+                      onMouseEnter={() => setSelectedIndex(idx)}
+                      onClick={() => handleSelectSuggestion(item)}
+                      className={`w-full text-left px-3.5 py-2.5 flex items-start gap-2.5 transition-colors cursor-pointer ${
+                        isSelected
+                          ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-950 dark:text-emerald-100'
+                          : 'hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-800 dark:text-slate-200'
+                      }`}
+                    >
+                      <div className="mt-0.5 shrink-0">
+                        {item.type === 'ticket' ? (
+                          <FileText className="h-4 w-4 text-amber-500" />
+                        ) : item.type === 'ward' ? (
+                          <Building2 className="h-4 w-4 text-indigo-500" />
+                        ) : (
+                          <MapPin className="h-4 w-4 text-[#138808]" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                            {item.name}
+                          </span>
+                          <span
+                            className={`text-[9px] uppercase font-black px-1.5 py-0.5 rounded shrink-0 ${
+                              item.type === 'ticket'
+                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                                : item.type === 'ward'
+                                ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300'
+                                : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                            }`}
+                          >
+                            {item.type}
+                          </span>
+                        </div>
+                        {(item.subtitle || item.formatted) && (
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                            {item.subtitle || item.formatted}
+                          </p>
+                        )}
+                      </div>
+                    </button>
+                  )
+                })
+              ) : searchStatus === 'empty' && searchQuery.trim().length >= 3 ? (
+                <div className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400 text-center font-medium">
+                  No matching locations found for "{searchQuery}"
+                </div>
+              ) : null}
+            </div>
           )}
-        </form>
+        </div>
 
         {/* Action Buttons & Layer Controls */}
         <div className="pointer-events-auto flex items-center gap-2">
@@ -585,7 +1024,30 @@ export default function MapView({
           onZoomChange={(zoom) => setCurrentZoom(zoom)}
         />
 
-        <MapPanController targetCenter={panTarget} />
+        <MapPanController targetCenter={panTarget} targetZoom={panTargetZoom} />
+
+        {/* Temporary Search Result Marker */}
+        {searchMarker && (
+          <Marker
+            position={[searchMarker.lat, searchMarker.lng]}
+            icon={createSearchLocationIcon()}
+          >
+            <Popup className="cgn-leaflet-popup" autoPan={true}>
+              <div className="p-2 space-y-1 text-xs">
+                <div className="flex items-center gap-1.5 font-bold text-emerald-700 dark:text-emerald-400">
+                  <MapPin className="h-3.5 w-3.5 shrink-0" />
+                  <span>{searchMarker.title}</span>
+                </div>
+                <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-snug">
+                  {searchMarker.address}
+                </p>
+                <div className="pt-1 text-[10px] text-slate-400 font-medium">
+                  {searchMarker.lat.toFixed(5)}, {searchMarker.lng.toFixed(5)}
+                </div>
+              </div>
+            </Popup>
+          </Marker>
+        )}
 
         {/* User Location Marker */}
         {userLocation && (
@@ -702,16 +1164,18 @@ export default function MapView({
       </MapContainer>
 
       {/* ── Floating Legend ────────────────────────────────────────────────── */}
-      <div className="absolute bottom-4 left-4 z-[1000] bg-white/90 dark:bg-slate-900/90 backdrop-blur-md rounded-2xl shadow-lg border border-slate-200/80 dark:border-slate-700/80 p-2.5 text-[11px] hidden sm:block">
-        <div className="font-bold text-slate-800 dark:text-white mb-1">GIS LEGEND</div>
-        <div className="flex items-center gap-3">
-          <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-blue-500"></span> Open</span>
-          <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-500"></span> In Progress</span>
-          <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-500"></span> Resolved</span>
-          <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-rose-500"></span> Overdue</span>
-          <span className="flex items-center gap-1"><span className="text-orange-500 font-bold">🔥</span> Hotspot</span>
+      {showLegend && (
+        <div className="absolute bottom-4 left-4 z-[1000] bg-white/90 dark:bg-slate-900/90 backdrop-blur-md rounded-2xl shadow-lg border border-slate-200/80 dark:border-slate-700/80 p-2.5 text-[11px] hidden sm:block">
+          <div className="font-bold text-slate-800 dark:text-white mb-1">GIS LEGEND</div>
+          <div className="flex items-center gap-3">
+            <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-blue-500"></span> Open</span>
+            <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-500"></span> In Progress</span>
+            <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-500"></span> Resolved</span>
+            <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-rose-500"></span> Overdue</span>
+            <span className="flex items-center gap-1"><span className="text-orange-500 font-bold">🔥</span> Hotspot</span>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ── Slide-Over Complaint Drawer (Admin / GIS Command) ────────────────── */}
       <AnimatePresence>

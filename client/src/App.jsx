@@ -31,6 +31,11 @@ const Settings = lazy(() => import('./pages/Settings'))
 const NotFound = lazy(() => import('./pages/NotFound'))
 const CivicImpact = lazy(() => import('./pages/CivicImpact'))
 const OfficerPerformance = lazy(() => import('./pages/OfficerPerformance'))
+const HelpCenter = lazy(() => import('./pages/HelpCenter'))
+const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'))
+const TermsOfService = lazy(() => import('./pages/TermsOfService'))
+const Accessibility = lazy(() => import('./pages/Accessibility'))
+const ContactSupport = lazy(() => import('./pages/ContactSupport'))
 
 function withLoader(node) {
   return <Suspense fallback={<RouteLoader />}>{node}</Suspense>
@@ -80,6 +85,15 @@ export default function App() {
           <Route path="/map" element={withLoader(<MapPage />)} />
           <Route path="/impact" element={withLoader(<CivicImpact />)} />
           <Route path="/civic-impact" element={withLoader(<CivicImpact />)} />
+          <Route path="/help" element={withLoader(<HelpCenter />)} />
+          <Route path="/faq" element={withLoader(<HelpCenter />)} />
+          <Route path="/privacy" element={withLoader(<PrivacyPolicy />)} />
+          <Route path="/terms" element={withLoader(<TermsOfService />)} />
+          <Route path="/accessibility" element={withLoader(<Accessibility />)} />
+          <Route path="/contact" element={withLoader(<ContactSupport />)} />
+          <Route path="/admin/departments" element={<Navigate to="/admin?tab=departments" replace />} />
+          <Route path="/admin/wards" element={<Navigate to="/admin?tab=wards" replace />} />
+          <Route path="/admin/analytics" element={<Navigate to="/admin?tab=reports" replace />} />
           <Route path="/profile" element={withLoader(<Profile />)} />
           <Route path="/settings" element={withLoader(<Settings />)} />
           <Route path="/pending-approval" element={withLoader(<ProtectedRoute roles={['officer']} isPendingApprovalRoute={true} redirectTo={homeRoute}><PendingApproval /></ProtectedRoute>)} />
@@ -120,6 +134,17 @@ export default function App() {
         <Route path="/complaints/new" element={withLoader(<ProtectedRoute><ComplaintForm /></ProtectedRoute>)} />
         <Route path="/complaints/:id" element={withLoader(<ComplaintView />)} />
         <Route path="/map" element={withLoader(<MapPage />)} />
+        <Route path="/impact" element={withLoader(<CivicImpact />)} />
+        <Route path="/civic-impact" element={withLoader(<CivicImpact />)} />
+        <Route path="/help" element={withLoader(<HelpCenter />)} />
+        <Route path="/faq" element={withLoader(<HelpCenter />)} />
+        <Route path="/privacy" element={withLoader(<PrivacyPolicy />)} />
+        <Route path="/terms" element={withLoader(<TermsOfService />)} />
+        <Route path="/accessibility" element={withLoader(<Accessibility />)} />
+        <Route path="/contact" element={withLoader(<ContactSupport />)} />
+        <Route path="/admin/departments" element={<Navigate to="/admin?tab=departments" replace />} />
+        <Route path="/admin/wards" element={<Navigate to="/admin?tab=wards" replace />} />
+        <Route path="/admin/analytics" element={<Navigate to="/admin?tab=reports" replace />} />
         <Route path="*" element={withLoader(<Landing />)} />
       </Routes>
     </>

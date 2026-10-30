@@ -2,10 +2,10 @@ import api, { unwrapResponse } from './api';
 
 const DEFAULT_TIMEOUT = 10000;
 
-export async function getPublicHealth(signal = null) {
+export async function getPublicHealth(signal = null, timeout = 12000) {
   try {
     const res = await api.get('/health', {
-      timeout: 5000,
+      timeout,
       signal
     });
     return res.data;

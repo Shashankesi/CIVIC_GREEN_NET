@@ -632,3 +632,65 @@ a:focus-visible {
 .dark .officer-qa-purple { background: rgba(139, 92, 246, 0.06); border-color: rgba(139, 92, 246, 0.12); }
 .dark .officer-qa-purple:hover { background: rgba(139, 92, 246, 0.12); border-color: rgba(139, 92, 246, 0.2); }
 
+
+
+/* ===== Seamless Panoramic Background Experience ===== */
+.civic-overview-experience {
+  position: relative;
+  width: 100%;
+  background-color: #F4F8F5;
+}
+
+.dark .civic-overview-experience {
+  background-color: #0B131C;
+}
+
+.civic-panorama-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.civic-panorama-image {
+  width: 100%;
+  height: auto;
+  display: block;
+  object-fit: contain;
+  object-position: center top;
+}
+
+/* Tablet & Mobile responsive composition adjustments as specified in Requirement 3 */
+@media (max-width: 767px) {
+  .civic-panorama-container {
+    height: 340px;
+    display: flex;
+    justify-content: center;
+  }
+  .civic-panorama-image {
+    width: auto;
+    min-width: 860px;
+    height: 100%;
+    object-fit: cover;
+    object-position: center top;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  .civic-panorama-container {
+    min-height: 320px;
+    display: flex;
+    justify-content: center;
+  }
+  .civic-panorama-image {
+    width: 100%;
+    min-height: 320px;
+    height: auto;
+    object-fit: cover;
+    object-position: center top;
+  }
+}

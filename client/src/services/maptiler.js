@@ -2,7 +2,7 @@
 // Uses VITE_MAPTILER_API_KEY from the Vite environment.
 // Never throws unhandled — returns normalized envelopes so UI can react cleanly.
 
-import { hasMaptilerKey, MAPTILER_KEY } from '../config/mapConfig'
+import { hasMaptilerKey, MAPTILER_KEY } from '../config/mapConfig.js'
 
 const GEOCODE_BASE = 'https://api.maptiler.com/geocoding'
 

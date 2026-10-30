@@ -2,7 +2,7 @@
 // The browser API key is read from Vite's env (VITE_MAPTILER_API_KEY).
 // It is never hardcoded in JSX/JS source files.
 
-const MAPTILER_API_KEY = import.meta.env.VITE_MAPTILER_API_KEY || ''
+const MAPTILER_API_KEY = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_MAPTILER_API_KEY) || ''
 
 // MapTiler raster tile URLs (PNG) — work with react-leaflet TileLayer.
 // Light:  streets-v2  (clean civic government look)

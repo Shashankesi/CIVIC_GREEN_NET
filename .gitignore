@@ -1,67 +1,90 @@
-# Environment files — NEVER COMMIT REAL SECRETS
+# =========================================================================
+# CivicGreenNet — Production-Safe .gitignore
+# =========================================================================
+
+# Environment variables and secrets
 .env
 .env.*
+!.env.example
+!.env.sample
+
+# Backend environment files
+backend/.env
+backend/.env.*
 server/.env
 server/.env.*
+!server/.env.example
+!server/.env.sample
+
+# Frontend environment files
+frontend/.env
+frontend/.env.*
 client/.env
 client/.env.*
-!.env.example
-!server/.env.example
 !client/.env.example
+!client/.env.sample
 
-# Node dependencies
+# Credentials and private keys
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+credentials.json
+service-account*.json
+secrets.json
+
+# Database and local data
+*.sqlite
+*.sqlite3
+*.db
+dumps/
+backups/
+
+# Dependencies
 node_modules/
 client/node_modules/
 server/node_modules/
-npm-debug.log*
-yarn-debug.log*
-pnpm-debug.log*
+vendor/
 
-# Build output
+# Build outputs
 dist/
 build/
 coverage/
 client/dist/
+client/build/
 server/coverage/
 
-# Logs & test outputs
+# Logs & Debugging & Test outputs
 *.log
 logs/
-server/server_stdout.log
-server/server_stderr.log
-server/test_out.txt
-server/test_results_latest.txt
+server/*.log
+*.txt
+server/*.txt
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
 
-# OS metadata
-.DS_Store
-Thumbs.db
-
-# IDE configuration
+# Local IDE and OS files
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json
 .idea/
+.DS_Store
+Thumbs.db
+ehthumbs.db
 
-# Runtime & temporary files
+# Temporary files & Scratch
+*.tmp
+*.temp
 *.pid
 *.seed
+.cache/
 tmp/
 temp/
 server/tmp/
-*.tmp
-
-# Secrets / credentials
-*.pem
-*.key
-*.crt
-*.p12
-credentials.json
-service-account*.json
-
-# Local development uploads
 server/uploads/
 uploads/
-
-# AI Agent Workspace
 brain/
 scratch/
+test.png

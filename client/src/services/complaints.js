@@ -1,4 +1,4 @@
-import api, { getTokens } from './api'
+import api, { getTokens } from './api.js'
 
 // Backend wraps responses as { success, message, data } for complaint routes.
 // These helpers unwrap the inner payload so components receive it directly.
